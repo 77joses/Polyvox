@@ -1,4 +1,4 @@
-const CACHE = 'polyvox-v11';
+const CACHE = 'polyvox-v12';
 const FILES = [
     '/',
     '/index.html',
