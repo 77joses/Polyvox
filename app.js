@@ -61,14 +61,14 @@ function detectPitchLoop() {
     let rms = 0;
     for(let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
     rms = Math.sqrt(rms/buffer.length);
-    if(rms > 0.003) {
+    if(rms > 0.001) {
         const pitch = yin(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
             const note = freqToNote(pitch);
             if(note === lastNote) {
                 noteHoldCount++;
             } else {
-                if(lastNote && noteHoldCount >= 4) {
+                if(lastNote && noteHoldCount >= 2) {
                     recordedNotes.push(lastNote);
                     setStatus('🔴 ' + recordedNotes.length + ' notes');
                 }
