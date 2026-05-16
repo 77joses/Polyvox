@@ -9,13 +9,8 @@ let recordedBlob = null;
 let recordedUrl = null;
 let mediaRecorder = null;
 let recordedChunks = [];
-let staffStates = {
-    vocal:{mode:'auto',locked:false},
-    organ:{mode:'auto',locked:false},
-    guitar:{mode:'auto',locked:false},
-    drums:{mode:'auto',locked:false},
-    coro:{mode:'auto',locked:false}
-};
+let pitchTimeline = [];
+let recordingStartTime = 0;
 
 document.getElementById('btnRecord').addEventListener('click', startRecording);
 document.getElementById('btnStop').addEventListener('click', stopRecording);
@@ -39,6 +34,7 @@ async function startRecording() {
         analyser.fftSize = 8192;
         audioContext.createMediaStreamSource(mediaStream).connect(analyser);
         recordedChunks = [];
+        pitchTimeline = [];
         mediaRecorder = new MediaRecorder(mediaStream);
         mediaRecorder.ondataavailable = e => {
             if(e.data.size > 0) recordedChunks.push(e.data);
@@ -52,6 +48,7 @@ async function startRecording() {
         lastNote = null;
         noteHoldCount = 0;
         isRecording = true;
+        recordingStartTime = performance.now();
         document.getElementById('btnRecord').disabled = true;
         document.getElementById('btnStop').disabled = false;
         document.getElementById('btnGenerate').disabled = true;
@@ -82,9 +79,11 @@ function detectPitchLoop() {
     let rms = 0;
     for(let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
     rms = Math.sqrt(rms/buffer.length);
+    const elapsed = (performance.now() - recordingStartTime) / 1000;
     if(rms > 0.001) {
         const pitch = autocorrelate(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
+            pitchTimeline.push({time: elapsed, freq: pitch});
             const note = freqToNote(pitch);
             if(note === lastNote) {
                 noteHoldCount++;
@@ -96,7 +95,11 @@ function detectPitchLoop() {
                 lastNote = note;
                 noteHoldCount = 1;
             }
+        } else {
+            pitchTimeline.push({time: elapsed, freq: 0});
         }
+    } else {
+        pitchTimeline.push({time: elapsed, freq: 0});
     }
     requestAnimationFrame(detectPitchLoop);
 }
@@ -144,84 +147,17 @@ function freqToNote(freq) {
     return n[midi%12] + (Math.floor(midi/12)-1);
 }
 
-function noteToFreq(note) {
-    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    const name = note.slice(0,-1);
-    const oct = parseInt(note.slice(-1));
-    const midi = n.indexOf(name)+(oct+1)*12;
-    return 440*Math.pow(2,(midi-69)/12);
-}
-
-async function generateScore() {
-    if(!recordedUrl) {
-        setStatus('⚠️ No recording found!');
-        return;
-    }
-    if(recordedNotes.length===0) {
+function generateScore() {
+    if(pitchTimeline.length === 0) {
         setStatus('⚠️ No notes detected!');
         return;
     }
     currentNotes = {
         vocal: recordedNotes.slice(),
-        organ: recordedNotes.slice(),
-        guitar: genGuitar(recordedNotes),
-        drums: genDrums(recordedNotes.length),
-        coro: genCoro(recordedNotes)
+        organ: recordedNotes.slice()
     };
-    await buildOrganFromAudio();
     renderStaffs();
     setStatus('🎼 ' + recordedNotes.length + ' notes generated!');
-}
-
-async function buildOrganFromAudio() {
-    if(!recordedUrl) return;
-    const response = await fetch(recordedUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const ctx = new AudioContext();
-    window._organAudioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    await ctx.close();
-}
-
-function playOrganFromAudio() {
-    if(!window._organAudioBuffer) return;
-    const ctx = new AudioContext();
-    const src = ctx.createBufferSource();
-    src.buffer = window._organAudioBuffer;
-
-    const distortion = ctx.createWaveShaper();
-    const curve = new Float32Array(512);
-    for(let i=0;i<512;i++) {
-        const x = (i*2)/512 - 1;
-        curve[i] = Math.sign(x) * (1 - Math.exp(-Math.abs(x)*8));
-    }
-    distortion.curve = curve;
-
-    const low = ctx.createBiquadFilter();
-    low.type = 'lowshelf';
-    low.frequency.value = 200;
-    low.gain.value = -6;
-
-    const mid = ctx.createBiquadFilter();
-    mid.type = 'peaking';
-    mid.frequency.value = 900;
-    mid.Q.value = 1.2;
-    mid.gain.value = 8;
-
-    const high = ctx.createBiquadFilter();
-    high.type = 'highshelf';
-    high.frequency.value = 3000;
-    high.gain.value = -10;
-
-    const gain = ctx.createGain();
-    gain.gain.value = 0.7;
-
-    src.connect(distortion);
-    distortion.connect(low);
-    low.connect(mid);
-    mid.connect(high);
-    high.connect(gain);
-    gain.connect(ctx.destination);
-    src.start();
 }
 
 function renderStaffs() {
@@ -231,7 +167,7 @@ function renderStaffs() {
     const pb = document.createElement('button');
     pb.className = 'btn';
     pb.style.cssText = 'background:#F9A825;color:black;margin-bottom:8px';
-    pb.textContent = '▶ Play All Instruments';
+    pb.textContent = '▶ Play Voice + Organ Together';
     pb.onclick = playAll;
     sc.appendChild(pb);
 
@@ -241,9 +177,13 @@ function renderStaffs() {
         vocalDiv.innerHTML =
             '<div class="staff-header">'+
             '<span class="staff-label" style="color:#F9A825">🎤 Your Voice</span>'+
-            '</div>'+
+            '<div class="staff-controls">'+
+            '<button class="btn-play" onclick="playVoice()">▶</button>'+
+            '</div></div>'+
             '<audio controls style="width:100%;margin-top:8px" src="'+
-            recordedUrl+'"></audio>';
+            recordedUrl+'"></audio>'+
+            '<div class="notes" style="margin-top:8px">'+
+            (currentNotes.vocal||[]).join(' ')+'</div>';
         sc.appendChild(vocalDiv);
     }
 
@@ -253,150 +193,121 @@ function renderStaffs() {
         '<div class="staff-header">'+
         '<span class="staff-label" style="color:#4CAF50">🎹 Organ</span>'+
         '<div class="staff-controls">'+
-        '<button class="btn-play" onclick="playOrganFromAudio()">▶</button>'+
-        '<button class="btn-manual" onclick="setMode(\'organ\',\'manual\')">✏️</button>'+
-        '<button class="btn-lock" onclick="toggleLock(\'organ\')">🔒</button>'+
+        '<button class="btn-play" onclick="playOrgan(0)">▶</button>'+
+        '<button class="btn-manual" onclick="toggleManual()">✏️</button>'+
         '</div></div>'+
         '<div class="notes" id="notes-organ">'+
-        currentNotes.organ.join(' ')+'</div>'+
-        '<textarea class="manual-input" id="input-organ" '+
+        (currentNotes.organ||[]).join(' ')+'</div>'+
+        '<textarea id="input-organ" class="manual-input" '+
         'placeholder="Type notes e.g. C4 D4 E4 F4" '+
-        'onchange="updateManual(\'organ\')"></textarea>';
+        'onchange="updateOrganManual()"></textarea>';
     sc.appendChild(organDiv);
-
-    [
-        {id:'guitar',label:'🎸 Guitar',color:'#2196F3'},
-        {id:'drums',label:'🥁 Drums',color:'#F44336'},
-        {id:'coro',label:'🎺 Coro',color:'#9C27B0'}
-    ].forEach(s => sc.appendChild(createStaff(s)));
-
-    const vocalStaff = document.createElement('div');
-    vocalStaff.className = 'staff';
-    vocalStaff.innerHTML =
-        '<div class="staff-header">'+
-        '<span class="staff-label" style="color:#F9A825">🎵 Vocal Notes</span>'+
-        '<div class="staff-controls">'+
-        '<button class="btn-play" onclick="playStaff(\'vocal\')">▶</button>'+
-        '<button class="btn-manual" onclick="setMode(\'vocal\',\'manual\')">✏️</button>'+
-        '</div></div>'+
-        '<div class="notes" id="notes-vocal">'+
-        currentNotes.vocal.join(' ')+'</div>'+
-        '<textarea class="manual-input" id="input-vocal" '+
-        'placeholder="Type notes e.g. C4 D4 E4 F4" '+
-        'onchange="updateManual(\'vocal\')"></textarea>';
-    sc.appendChild(vocalStaff);
 }
 
-function createStaff(s) {
-    const notes = currentNotes[s.id]||[];
-    const div = document.createElement('div');
-    div.className = 'staff';
-    div.innerHTML =
-        '<div class="staff-header">'+
-        '<span class="staff-label" style="color:'+s.color+'">'+s.label+'</span>'+
-        '<div class="staff-controls">'+
-        '<button class="btn-play" onclick="playStaff(\''+s.id+'\')">▶</button>'+
-        '<button class="btn-auto" onclick="setMode(\''+s.id+'\',\'auto\')">Auto</button>'+
-        '<button class="btn-manual" onclick="setMode(\''+s.id+'\',\'manual\')">✏️</button>'+
-        '<button class="btn-lock" onclick="toggleLock(\''+s.id+'\')">🔒</button>'+
-        '</div></div>'+
-        '<div class="notes" id="notes-'+s.id+'">'+notes.join(' ')+'</div>'+
-        '<textarea class="manual-input" id="input-'+s.id+'" '+
-        'placeholder="Type notes e.g. C4 D4 E4 F4" '+
-        'onchange="updateManual(\''+s.id+'\')"></textarea>';
-    return div;
+function playVoice() {
+    if(!recordedUrl) return;
+    const audio = new Audio(recordedUrl);
+    audio.play();
 }
 
-function playStaff(id) {
-    const notes = currentNotes[id];
-    if(!notes||notes.length===0) return;
+function playOrgan(startDelay) {
+    if(pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
-    playNotes(ctx, notes, id, 0.5, 0);
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const osc3 = ctx.createOscillator();
+    const masterGain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc3.type = 'sine';
+
+    const g1 = ctx.createGain();
+    const g2 = ctx.createGain();
+    const g3 = ctx.createGain();
+
+    g1.gain.value = 0.6;
+    g2.gain.value = 0.3;
+    g3.gain.value = 0.1;
+
+    osc1.connect(g1); g1.connect(masterGain);
+    osc2.connect(g2); g2.connect(masterGain);
+    osc3.connect(g3); g3.connect(masterGain);
+    masterGain.connect(ctx.destination);
+    masterGain.gain.setValueAtTime(0, ctx.currentTime);
+
+    const firstTime = pitchTimeline[0].time;
+
+    pitchTimeline.forEach(point => {
+        const t = ctx.currentTime + startDelay + (point.time - firstTime);
+        if(point.freq > 0) {
+            osc1.frequency.setValueAtTime(point.freq, t);
+            osc2.frequency.setValueAtTime(point.freq * 2, t);
+            osc3.frequency.setValueAtTime(point.freq * 3, t);
+            masterGain.gain.setValueAtTime(0.4, t);
+        } else {
+            masterGain.gain.setValueAtTime(0, t);
+        }
+    });
+
+    const totalTime = pitchTimeline[pitchTimeline.length-1].time - firstTime;
+    osc1.start(ctx.currentTime + startDelay);
+    osc2.start(ctx.currentTime + startDelay);
+    osc3.start(ctx.currentTime + startDelay);
+    osc1.stop(ctx.currentTime + startDelay + totalTime + 0.5);
+    osc2.stop(ctx.currentTime + startDelay + totalTime + 0.5);
+    osc3.stop(ctx.currentTime + startDelay + totalTime + 0.5);
 }
 
 function playAll() {
     const delay = 0.3;
     if(recordedUrl) {
-        const audio = new Audio(recordedUrl);
-        setTimeout(() => audio.play(), delay * 1000);
+        setTimeout(() => {
+            const audio = new Audio(recordedUrl);
+            audio.play();
+        }, delay * 1000);
     }
-    setTimeout(() => playOrganFromAudio(), delay * 1000);
-    const ctx = new AudioContext();
-    ['guitar','drums','coro'].forEach(id => {
-        const notes = currentNotes[id];
-        if(notes) playNotes(ctx, notes, id, 0.5, delay);
-    });
+    playOrgan(delay);
 }
 
-function playNotes(ctx, notes, id, dur, startDelay=0) {
-    notes.forEach((note,i) => {
-        if(note==='—') return;
-        if(['Kick','Snare','Hi-hat'].includes(note)) {
-            playDrum(ctx, note, startDelay + i*dur);
-            return;
-        }
+function toggleManual() {
+    const input = document.getElementById('input-organ');
+    input.style.display =
+        input.style.display === 'block' ? 'none' : 'block';
+}
+
+function updateOrganManual() {
+    const val = document.getElementById('input-organ').value;
+    const notes = val.trim().split(/\s+/);
+    currentNotes.organ = notes;
+    document.getElementById('notes-organ').textContent = val;
+    pitchTimeline = buildTimelineFromNotes(notes);
+}
+
+function buildTimelineFromNotes(notes) {
+    const timeline = [];
+    const dur = 0.5;
+    notes.forEach((note, i) => {
         const freq = noteToFreq(note);
-        if(!freq||isNaN(freq)) return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = freq;
-        osc.type = id==='coro'?'sawtooth':'sine';
-        const t = ctx.currentTime + startDelay + i*dur;
-        gain.gain.setValueAtTime(0.2, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t+dur);
-        osc.start(t);
-        osc.stop(t+dur);
+        if(!freq || isNaN(freq)) return;
+        const start = i * dur;
+        const end = start + dur - 0.05;
+        for(let t = start; t < end; t += 0.02) {
+            timeline.push({time: t, freq: freq});
+        }
+        timeline.push({time: end, freq: 0});
     });
+    return timeline;
 }
 
-function playDrum(ctx, type, time) {
-    const buf = ctx.createBuffer(1, ctx.sampleRate*0.1, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for(let i=0;i<data.length;i++) {
-        data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,3);
-    }
-    const src = ctx.createBufferSource();
-    const gain = ctx.createGain();
-    src.buffer = buf;
-    src.connect(gain);
-    gain.connect(ctx.destination);
-    gain.gain.value = type==='Kick'?0.8:type==='Snare'?0.5:0.3;
-    src.start(ctx.currentTime+time);
-}
-
-function setMode(id, mode) {
-    staffStates[id].mode = mode;
-    const input = document.getElementById('input-'+id);
-    if(input) input.style.display = mode==='manual'?'block':'none';
-}
-
-function toggleLock(id) {
-    staffStates[id].locked = !staffStates[id].locked;
-    setStatus(staffStates[id].locked?
-        '🔒 '+id+' locked':'🔓 '+id+' unlocked');
-}
-
-function updateManual(id) {
-    if(staffStates[id].locked) return;
-    const val = document.getElementById('input-'+id).value;
-    currentNotes[id] = val.trim().split(/\s+/);
-    document.getElementById('notes-'+id).textContent = val;
-}
-
-function genGuitar(notes) {
-    const c=['C','G','Am','F','Dm','Em'];
-    return notes.map((_,i)=>c[i%c.length]);
-}
-
-function genDrums(len) {
-    const p=['Kick','Snare','Hi-hat','Snare'];
-    return Array.from({length:len},(_,i)=>p[i%p.length]);
-}
-
-function genCoro(notes) {
-    return notes.map((n,i)=>i%2===0?n:'—');
+function noteToFreq(note) {
+    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const name = note.slice(0,-1);
+    const oct = parseInt(note.slice(-1));
+    if(isNaN(oct)) return 0;
+    const midi = n.indexOf(name)+(oct+1)*12;
+    return 440*Math.pow(2,(midi-69)/12);
 }
 
 if('serviceWorker' in navigator) {
