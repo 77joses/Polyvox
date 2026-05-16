@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1B5E20">
+    <title>PolyVox</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #121212;
+            color: #ffffff;
+            font-family: sans-serif;
+            padding: 16px;
+        }
+        h1 {
+            color: #F9A825;
+            text-align: center;
+            font-size: 28px;
+            padding: 16px 0;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            margin: 6px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #btnRecord { background: #1B5E20; color: white; }
+        #btnStop { background: #B71C1C; color: white; }
+        #btnGenerate { background: #F9A825; color: black; }
+        .btn:disabled { opacity: 0.4; }
+        .staff {
+            margin: 12px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background: #1E1E1E;
+        }
+        .staff-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .staff-label {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .staff-controls button {
+            padding: 4px 10px;
+            margin-left: 4px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .btn-auto { background: #2E7D32; color: white; }
+        .btn-manual { background: #1565C0; color: white; }
+        .btn-lock { background: #4A4A4A; color: white; }
+        .notes {
+            font-size: 14px;
+            color: #CCCCCC;
+            word-break: break-all;
+            min-height: 30px;
+        }
+        .manual-input {
+            width: 100%;
+            background: #2A2A2A;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+        #status {
+            text-align: center;
+            color: #F9A825;
+            padding: 8px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 PolyVox</h1>
+    <div id="status">Ready to record</div>
+
+    <button class="btn" id="btnRecord">🎤 Record Vocals</button>
+    <button class="btn" id="btnStop" disabled>⏹ Stop</button>
+    <button class="btn" id="btnGenerate" disabled>🎼 Generate Score</button>
+
+    <div id="staffContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

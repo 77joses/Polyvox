@@ -1,0 +1,17 @@
+{
+    "name": "PolyVox",
+    "short_name": "PolyVox",
+    "description": "Vocal to multi-instrument score",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#121212",
+    "theme_color": "#1B5E20",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "icon.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        }
+    ]
+}
