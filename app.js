@@ -38,7 +38,6 @@ async function startRecording() {
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 8192;
         audioContext.createMediaStreamSource(mediaStream).connect(analyser);
-
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(mediaStream);
         mediaRecorder.ondataavailable = e => {
@@ -49,7 +48,6 @@ async function startRecording() {
             recordedUrl = URL.createObjectURL(recordedBlob);
         };
         mediaRecorder.start();
-
         recordedNotes = [];
         lastNote = null;
         noteHoldCount = 0;
@@ -154,7 +152,11 @@ function noteToFreq(note) {
     return 440*Math.pow(2,(midi-69)/12);
 }
 
-function generateScore() {
+async function generateScore() {
+    if(!recordedUrl) {
+        setStatus('⚠️ No recording found!');
+        return;
+    }
     if(recordedNotes.length===0) {
         setStatus('⚠️ No notes detected!');
         return;
@@ -166,8 +168,19 @@ function generateScore() {
         drums: genDrums(recordedNotes.length),
         coro: genCoro(recordedNotes)
     };
+    await buildOrganFromAudio();
     renderStaffs();
     setStatus('🎼 ' + recordedNotes.length + ' notes generated!');
+}
+
+async function buildOrganFromAudio() {
+    if(!recordedUrl) return;
+    const response = await fetch(recordedUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const ctx = new AudioContext();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    window._organAudioBuffer = audioBuffer;
+    await ctx.close();
 }
 
 function renderStaffs() {
@@ -193,8 +206,26 @@ function renderStaffs() {
         sc.appendChild(vocalDiv);
     }
 
+    const organDiv = document.createElement('div');
+    organDiv.className = 'staff';
+    organDiv.innerHTML =
+        '<div class="staff-header">'+
+        '<span class="staff-label" style="color:#4CAF50">🎹 Organ</span>'+
+        '<div class="staff-controls">'+
+        '<button class="btn-play" onclick="playOrganFromAudio()">▶</button>'+
+        '<button class="btn-manual" onclick="setMode(\'organ\',\'manual\')">✏️</button>'+
+        '<button class="btn-lock" onclick="toggleLock(\'organ\')">🔒</button>'+
+        '</div></div>'+
+        '<div style="color:#aaa;font-size:12px;padding:4px">'+
+        'Organ mirrors your exact vocal melody</div>'+
+        '<div class="notes" id="notes-organ">'+
+        currentNotes.organ.join(' ')+'</div>'+
+        '<textarea class="manual-input" id="input-organ" '+
+        'placeholder="Type notes e.g. C4 D4 E4 F4" '+
+        'onchange="updateManual(\'organ\')"></textarea>';
+    sc.appendChild(organDiv);
+
     [
-        {id:'organ',label:'🎹 Organ',color:'#4CAF50'},
         {id:'guitar',label:'🎸 Guitar',color:'#2196F3'},
         {id:'drums',label:'🥁 Drums',color:'#F44336'},
         {id:'coro',label:'🎺 Coro',color:'#9C27B0'}
@@ -237,24 +268,47 @@ function createStaff(s) {
     return div;
 }
 
-function playStaff(id) {
-    const notes = currentNotes[id];
-    if(!notes||notes.length===0) return;
+function playOrganFromAudio() {
+    if(!window._organAudioBuffer) return;
     const ctx = new AudioContext();
-    playNotes(ctx, notes, id, 0.5, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = window._organAudioBuffer;
+    const waveShaper = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for(let i=0;i<256;i++) {
+        const x = (i*2)/256 - 1;
+        curve[i] = (Math.PI + 100) * x / (Math.PI + 100 * Math.abs(x));
+    }
+    waveShaper.curve = curve;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800;
+    filter.Q.value = 0.5;
+    src.connect(filter);
+    filter.connect(waveShaper);
+    waveShaper.connect(ctx.destination);
+    src.start();
 }
 
 function playAll() {
-    const ctx = new AudioContext();
     const delay = 0.3;
     if(recordedUrl) {
         const audio = new Audio(recordedUrl);
         setTimeout(() => audio.play(), delay * 1000);
     }
-    ['organ','guitar','drums','coro'].forEach(id => {
+    setTimeout(() => playOrganFromAudio(), delay * 1000);
+    const ctx = new AudioContext();
+    ['guitar','drums','coro'].forEach(id => {
         const notes = currentNotes[id];
         if(notes) playNotes(ctx, notes, id, 0.5, delay);
     });
+}
+
+function playStaff(id) {
+    const notes = currentNotes[id];
+    if(!notes||notes.length===0) return;
+    const ctx = new AudioContext();
+    playNotes(ctx, notes, id, 0.5, 0);
 }
 
 function playNotes(ctx, notes, id, dur, startDelay=0) {
@@ -271,7 +325,7 @@ function playNotes(ctx, notes, id, dur, startDelay=0) {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.frequency.value = freq;
-        osc.type = id==='organ'?'square':id==='coro'?'sawtooth':'sine';
+        osc.type = id==='coro'?'sawtooth':'sine';
         const t = ctx.currentTime + startDelay + i*dur;
         gain.gain.setValueAtTime(0.2, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t+dur);
