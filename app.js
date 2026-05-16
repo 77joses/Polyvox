@@ -68,7 +68,7 @@ function detectPitchLoop() {
             if(note === lastNote) {
                 noteHoldCount++;
             } else {
-                if(lastNote && noteHoldCount >= 2) {
+                if(lastNote && noteHoldCount >= 3) {
                     recordedNotes.push(lastNote);
                     setStatus('🔴 ' + recordedNotes.length + ' notes');
                 }
