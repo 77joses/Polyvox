@@ -1,4 +1,4 @@
-const CACHE = 'polyvox-v2';
+const CACHE = 'polyvox-v4';
 const FILES = [
     '/',
     '/index.html',
@@ -23,8 +23,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
     e.respondWith(
-        caches.match(e.request).then(response => {
-            return response || fetch(e.request);
-        })
+        fetch(e.request).catch(() =>
+            caches.match(e.request)
+        )
     );
 });
