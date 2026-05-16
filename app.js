@@ -24,11 +24,15 @@ function setStatus(msg) {
 async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio:{echoCancellation:true,noiseSuppression:true}
+            audio:{
+                echoCancellation:true,
+                noiseSuppression:true,
+                autoGainControl:true
+            }
         });
         audioContext = new AudioContext({sampleRate:SAMPLE_RATE});
         analyser = audioContext.createAnalyser();
-        analyser.fftSize = 4096;
+        analyser.fftSize = 8192;
         audioContext.createMediaStreamSource(mediaStream).connect(analyser);
         recordedNotes = [];
         lastNote = null;
@@ -62,7 +66,7 @@ function detectPitchLoop() {
     for(let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
     rms = Math.sqrt(rms/buffer.length);
     if(rms > 0.001) {
-        const pitch = yin(buffer, SAMPLE_RATE);
+        const pitch = autocorrelate(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
             const note = freqToNote(pitch);
             if(note === lastNote) {
@@ -80,27 +84,41 @@ function detectPitchLoop() {
     requestAnimationFrame(detectPitchLoop);
 }
 
-function yin(buffer, sampleRate) {
-    const threshold = 0.15;
-    const half = Math.floor(buffer.length/2);
-    const yb = new Float32Array(half);
-    yb[0] = 1;
-    let sum = 0;
-    for(let tau=1;tau<half;tau++) {
-        let s = 0;
-        for(let i=0;i<half;i++) {
-            const d = buffer[i]-buffer[i+tau];
-            s += d*d;
+function autocorrelate(buffer, sampleRate) {
+    const SIZE = buffer.length;
+    const MAX_SAMPLES = Math.floor(SIZE/2);
+    let bestOffset = -1;
+    let bestCorrelation = 0;
+    let rms = 0;
+    let foundGoodCorrelation = false;
+    let correlations = new Array(MAX_SAMPLES);
+
+    for(let i=0;i<SIZE;i++) rms += buffer[i]*buffer[i];
+    rms = Math.sqrt(rms/SIZE);
+    if(rms < 0.001) return -1;
+
+    let lastCorrelation = 1;
+    for(let offset=0;offset<MAX_SAMPLES;offset++) {
+        let correlation = 0;
+        for(let i=0;i<MAX_SAMPLES;i++) {
+            correlation += Math.abs((buffer[i])-(buffer[i+offset]));
         }
-        sum += s;
-        yb[tau] = sum>0 ? s*tau/sum : 0;
-    }
-    for(let tau=2;tau<half;tau++) {
-        if(yb[tau]<threshold) {
-            while(tau+1<half && yb[tau+1]<yb[tau]) tau++;
-            return sampleRate/tau;
+        correlation = 1-(correlation/MAX_SAMPLES);
+        correlations[offset] = correlation;
+        if((correlation > 0.9) && (correlation > lastCorrelation)) {
+            foundGoodCorrelation = true;
+            if(correlation > bestCorrelation) {
+                bestCorrelation = correlation;
+                bestOffset = offset;
+            }
+        } else if(foundGoodCorrelation) {
+            let shift = (correlations[bestOffset+1] -
+                correlations[bestOffset-1])/correlations[bestOffset];
+            return sampleRate/(bestOffset+(8*shift));
         }
+        lastCorrelation = correlation;
     }
+    if(bestCorrelation > 0.01) return sampleRate/bestOffset;
     return -1;
 }
 
