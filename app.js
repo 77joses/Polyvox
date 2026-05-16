@@ -161,7 +161,7 @@ function generateScore() {
     }
     currentNotes = {
         vocal: recordedNotes.slice(),
-        organ: genOrgan(recordedNotes),
+        organ: recordedNotes.slice(),
         guitar: genGuitar(recordedNotes),
         drums: genDrums(recordedNotes.length),
         coro: genCoro(recordedNotes)
@@ -188,7 +188,8 @@ function renderStaffs() {
             '<div class="staff-header">'+
             '<span class="staff-label" style="color:#F9A825">🎤 Your Voice</span>'+
             '</div>'+
-            '<audio controls style="width:100%;margin-top:8px" src="'+recordedUrl+'"></audio>';
+            '<audio controls style="width:100%;margin-top:8px" src="'+
+            recordedUrl+'"></audio>';
         sc.appendChild(vocalDiv);
     }
 
@@ -208,7 +209,8 @@ function renderStaffs() {
         '<button class="btn-play" onclick="playStaff(\'vocal\')">▶</button>'+
         '<button class="btn-manual" onclick="setMode(\'vocal\',\'manual\')">✏️</button>'+
         '</div></div>'+
-        '<div class="notes" id="notes-vocal">'+currentNotes.vocal.join(' ')+'</div>'+
+        '<div class="notes" id="notes-vocal">'+
+        currentNotes.vocal.join(' ')+'</div>'+
         '<textarea class="manual-input" id="input-vocal" '+
         'placeholder="Type notes e.g. C4 D4 E4 F4" '+
         'onchange="updateManual(\'vocal\')"></textarea>';
@@ -239,26 +241,27 @@ function playStaff(id) {
     const notes = currentNotes[id];
     if(!notes||notes.length===0) return;
     const ctx = new AudioContext();
-    playNotes(ctx, notes, id, 0.5);
+    playNotes(ctx, notes, id, 0.5, 0);
 }
 
 function playAll() {
+    const ctx = new AudioContext();
+    const delay = 0.3;
     if(recordedUrl) {
         const audio = new Audio(recordedUrl);
-        audio.play();
+        setTimeout(() => audio.play(), delay * 1000);
     }
-    const ctx = new AudioContext();
     ['organ','guitar','drums','coro'].forEach(id => {
         const notes = currentNotes[id];
-        if(notes) playNotes(ctx, notes, id, 0.5);
+        if(notes) playNotes(ctx, notes, id, 0.5, delay);
     });
 }
 
-function playNotes(ctx, notes, id, dur) {
+function playNotes(ctx, notes, id, dur, startDelay=0) {
     notes.forEach((note,i) => {
         if(note==='—') return;
         if(['Kick','Snare','Hi-hat'].includes(note)) {
-            playDrum(ctx, note, i*dur);
+            playDrum(ctx, note, startDelay + i*dur);
             return;
         }
         const freq = noteToFreq(note);
@@ -269,7 +272,7 @@ function playNotes(ctx, notes, id, dur) {
         gain.connect(ctx.destination);
         osc.frequency.value = freq;
         osc.type = id==='organ'?'square':id==='coro'?'sawtooth':'sine';
-        const t = ctx.currentTime+i*dur;
+        const t = ctx.currentTime + startDelay + i*dur;
         gain.gain.setValueAtTime(0.2, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t+dur);
         osc.start(t);
@@ -300,7 +303,8 @@ function setMode(id, mode) {
 
 function toggleLock(id) {
     staffStates[id].locked = !staffStates[id].locked;
-    setStatus(staffStates[id].locked?'🔒 '+id+' locked':'🔓 '+id+' unlocked');
+    setStatus(staffStates[id].locked?
+        '🔒 '+id+' locked':'🔓 '+id+' unlocked');
 }
 
 function updateManual(id) {
@@ -308,17 +312,6 @@ function updateManual(id) {
     const val = document.getElementById('input-'+id).value;
     currentNotes[id] = val.trim().split(/\s+/);
     document.getElementById('notes-'+id).textContent = val;
-}
-
-function genOrgan(notes) {
-    const r=[];
-    for(const n of notes) {
-        r.push(n);
-        const base=n.slice(0,-1);
-        const oct=parseInt(n.slice(-1));
-        if(!isNaN(oct)) r.push(base+Math.max(1,oct-1));
-    }
-    return r;
 }
 
 function genGuitar(notes) {
