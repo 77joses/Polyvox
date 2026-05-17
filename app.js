@@ -236,9 +236,9 @@ function playOrgan(startDelay) {
     const g2 = ctx.createGain();
     const g3 = ctx.createGain();
 
-    g1.gain.value = 1.0;
-    g2.gain.value = 0.6;
-    g3.gain.value = 0.3;
+    g1.gain.value = 2.0;
+    g2.gain.value = 1.2;
+    g3.gain.value = 0.6;
 
     osc1.connect(g1); g1.connect(masterGain);
     osc2.connect(g2); g2.connect(masterGain);
@@ -254,7 +254,7 @@ function playOrgan(startDelay) {
             osc1.frequency.setValueAtTime(point.freq * 2, t);
             osc2.frequency.setValueAtTime(point.freq * 4, t);
             osc3.frequency.setValueAtTime(point.freq * 6, t);
-            masterGain.gain.setValueAtTime(0.8, t);
+            masterGain.gain.setValueAtTime(1.5, t);
         } else {
             masterGain.gain.setValueAtTime(0, t);
         }
