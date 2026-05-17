@@ -1,4 +1,5 @@
 const SAMPLE_RATE = 44100;
+const ORGAN_SAMPLE_NOTE = 60;
 let audioContext, analyser, mediaStream;
 let isRecording = false;
 let recordedNotes = [];
@@ -11,6 +12,7 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let pitchTimeline = [];
 let recordingStartTime = 0;
+let organSampleBuffer = null;
 
 document.getElementById('btnRecord').addEventListener('click', startRecording);
 document.getElementById('btnStop').addEventListener('click', stopRecording);
@@ -20,7 +22,27 @@ function setStatus(msg) {
     document.getElementById('status').textContent = msg;
 }
 
+async function loadOrganSample() {
+    if(organSampleBuffer) return;
+    try {
+        const response = await fetch('Roland-JX-8P-Pipe-Organ-C4.wav');
+        const arrayBuffer = await response.arrayBuffer();
+        const ctx = new AudioContext();
+        organSampleBuffer = await ctx.decodeAudioData(arrayBuffer);
+        await ctx.close();
+        setStatus('🎹 Organ sample loaded!');
+    } catch(e) {
+        setStatus('Error loading organ sample: ' + e.message);
+    }
+}
+
+window.addEventListener('load', loadOrganSample);
+
 async function startRecording() {
+    if(!organSampleBuffer) {
+        setStatus('⏳ Loading organ sample...');
+        await loadOrganSample();
+    }
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio:{
@@ -80,15 +102,13 @@ function detectPitchLoop() {
     for(let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
     rms = Math.sqrt(rms/buffer.length);
     const elapsed = (performance.now() - recordingStartTime) / 1000;
-
     if(rms > 0.001) {
         const pitch = autocorrelate(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
             const last = pitchTimeline[pitchTimeline.length-1];
-            const significantChange = !last ||
-                last.freq === 0 ||
+            const changed = !last || last.freq === 0 ||
                 Math.abs(pitch - last.freq) / last.freq > 0.02;
-            if(significantChange) {
+            if(changed) {
                 pitchTimeline.push({time: elapsed, freq: pitch});
             }
             const note = freqToNote(pitch);
@@ -160,15 +180,6 @@ function freqToNote(freq) {
     return n[midi%12] + (Math.floor(midi/12)-1);
 }
 
-function noteToFreq(note) {
-    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    const name = note.slice(0,-1);
-    const oct = parseInt(note.slice(-1));
-    if(isNaN(oct)) return 0;
-    const midi = n.indexOf(name)+(oct+1)*12;
-    return 440*Math.pow(2,(midi-69)/12);
-}
-
 function generateScore() {
     if(pitchTimeline.length === 0) {
         setStatus('⚠️ No notes detected!');
@@ -233,59 +244,37 @@ function playVoice() {
 }
 
 function playOrgan(startDelay) {
-    if(pitchTimeline.length === 0) return;
+    if(!organSampleBuffer || pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
+    const sampleFreq = 261.63;
 
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const osc3 = ctx.createOscillator();
-    const masterGain = ctx.createGain();
+    pitchTimeline.forEach((point, i) => {
+        if(point.freq <= 0) return;
+        const next = pitchTimeline[i+1];
+        const duration = next ?
+            (next.time - point.time) :
+            0.1;
+        if(duration <= 0) return;
 
-    osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc3.type = 'sine';
+        const src = ctx.createBufferSource();
+        src.buffer = organSampleBuffer;
+        src.playbackRate.value = point.freq / sampleFreq;
+        src.loop = true;
 
-    const g1 = ctx.createGain();
-    const g2 = ctx.createGain();
-    const g3 = ctx.createGain();
+        const gain = ctx.createGain();
+        const t = ctx.currentTime + startDelay + point.time -
+            pitchTimeline[0].time;
 
-    g1.gain.value = 2.0;
-    g2.gain.value = 1.2;
-    g3.gain.value = 0.6;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.8, t + 0.02);
+        gain.gain.setValueAtTime(0.8, t + duration - 0.02);
+        gain.gain.linearRampToValueAtTime(0, t + duration);
 
-    osc1.connect(g1); g1.connect(masterGain);
-    osc2.connect(g2); g2.connect(masterGain);
-    osc3.connect(g3); g3.connect(masterGain);
-    masterGain.connect(ctx.destination);
-    masterGain.gain.setValueAtTime(0, ctx.currentTime);
-
-    const firstTime = pitchTimeline[0].time;
-    const firstActive = pitchTimeline.find(p => p.freq > 0);
-    if(firstActive) {
-        osc1.frequency.setValueAtTime(firstActive.freq*2, ctx.currentTime);
-        osc2.frequency.setValueAtTime(firstActive.freq*4, ctx.currentTime);
-        osc3.frequency.setValueAtTime(firstActive.freq*6, ctx.currentTime);
-    }
-
-    pitchTimeline.forEach(point => {
-        const t = ctx.currentTime + startDelay + (point.time - firstTime);
-        if(point.freq > 0) {
-            osc1.frequency.setValueAtTime(point.freq * 2, t);
-            osc2.frequency.setValueAtTime(point.freq * 4, t);
-            osc3.frequency.setValueAtTime(point.freq * 6, t);
-            masterGain.gain.setValueAtTime(1.5, t);
-        } else {
-            masterGain.gain.setValueAtTime(0, t);
-        }
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(t);
+        src.stop(t + duration);
     });
-
-    const totalTime = pitchTimeline[pitchTimeline.length-1].time - firstTime;
-    osc1.start(ctx.currentTime + startDelay);
-    osc2.start(ctx.currentTime + startDelay);
-    osc3.start(ctx.currentTime + startDelay);
-    osc1.stop(ctx.currentTime + startDelay + totalTime + 0.5);
-    osc2.stop(ctx.currentTime + startDelay + totalTime + 0.5);
-    osc3.stop(ctx.currentTime + startDelay + totalTime + 0.5);
 }
 
 function playAll() {
@@ -314,12 +303,14 @@ function buildTimelineFromNotes(notes) {
     const timeline = [];
     const dur = 0.5;
     notes.forEach((note, i) => {
-        const freq = noteToFreq(note);
-        if(!freq || isNaN(freq)) return;
-        const start = i * dur;
-        timeline.push({time: start, freq: freq});
-        timeline.push({time: start + dur - 0.05, freq: freq});
-        timeline.push({time: start + dur, freq: 0});
+        const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+        const name = note.slice(0,-1);
+        const oct = parseInt(note.slice(-1));
+        if(isNaN(oct)) return;
+        const midi = n.indexOf(name)+(oct+1)*12;
+        const freq = 440*Math.pow(2,(midi-69)/12);
+        timeline.push({time: i*dur, freq: freq});
+        timeline.push({time: i*dur + dur, freq: 0});
     });
     return timeline;
 }
