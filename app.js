@@ -1,5 +1,7 @@
 const SAMPLE_RATE = 44100;
 const ORGAN_SAMPLE_FREQ = 261.63;
+const MIN_VOCAL_FREQ = 100;
+const MAX_VOCAL_FREQ = 320;
 let audioContext, analyser, mediaStream;
 let isRecording = false;
 let recordedNotes = [];
@@ -40,9 +42,7 @@ async function loadOrganSample() {
 window.addEventListener('load', loadOrganSample);
 
 async function startRecording() {
-    if(!organSampleBuffer) {
-        await loadOrganSample();
-    }
+    if(!organSampleBuffer) await loadOrganSample();
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio:{
@@ -94,6 +94,13 @@ function stopRecording() {
     setStatus('✅ Detected ' + recordedNotes.length + ' notes');
 }
 
+function fixOctave(freq) {
+    if(freq <= 0) return 0;
+    while(freq > MAX_VOCAL_FREQ) freq /= 2;
+    while(freq < MIN_VOCAL_FREQ) freq *= 2;
+    return freq;
+}
+
 function detectPitchLoop() {
     if(!isRecording) return;
     const buffer = new Float32Array(analyser.fftSize);
@@ -105,13 +112,14 @@ function detectPitchLoop() {
     if(rms > 0.001) {
         const pitch = autocorrelate(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
+            const fixed = fixOctave(pitch);
             const last = pitchTimeline[pitchTimeline.length-1];
             const changed = !last || last.freq === 0 ||
-                Math.abs(pitch - last.freq) / last.freq > 0.02;
+                Math.abs(fixed - last.freq) / last.freq > 0.02;
             if(changed) {
-                pitchTimeline.push({time: elapsed, freq: pitch});
+                pitchTimeline.push({time: elapsed, freq: fixed});
             }
-            const note = freqToNote(pitch);
+            const note = freqToNote(fixed);
             if(note === lastNote) {
                 noteHoldCount++;
             } else {
@@ -184,11 +192,9 @@ function groupPitchTimeline(timeline) {
     if(timeline.length === 0) return [];
     const groups = [];
     let current = null;
-
-    timeline.forEach((point, i) => {
+    timeline.forEach(point => {
         const midi = point.freq > 0 ?
             Math.round(12*Math.log2(point.freq/440)+69) : -1;
-
         if(!current) {
             current = {
                 startTime: point.time,
@@ -205,14 +211,13 @@ function groupPitchTimeline(timeline) {
             };
         }
     });
-
     if(current) {
-        current.endTime = timeline[timeline.length-1].time + 0.1;
+        current.endTime =
+            timeline[timeline.length-1].time + 0.1;
         groups.push(current);
     }
-
-    return groups.filter(g => g.freq > 0 &&
-        (g.endTime - g.startTime) > 0.05);
+    return groups.filter(g =>
+        g.freq > 0 && (g.endTime - g.startTime) > 0.05);
 }
 
 function generateScore() {
@@ -282,24 +287,22 @@ function playOrgan(startDelay) {
     if(!organSampleBuffer || pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
     const groups = groupPitchTimeline(pitchTimeline);
-    const firstTime = groups.length > 0 ? groups[0].startTime : 0;
+    if(groups.length === 0) return;
+    const firstTime = groups[0].startTime;
 
     groups.forEach(group => {
         const t = ctx.currentTime + startDelay +
             (group.startTime - firstTime);
         const duration = group.endTime - group.startTime;
-
         const src = ctx.createBufferSource();
         src.buffer = organSampleBuffer;
         src.playbackRate.value = group.freq / ORGAN_SAMPLE_FREQ;
         src.loop = true;
-
         const gain = ctx.createGain();
         gain.gain.setValueAtTime(0, t);
         gain.gain.linearRampToValueAtTime(1.6, t + 0.03);
         gain.gain.setValueAtTime(1.6, t + duration - 0.03);
         gain.gain.linearRampToValueAtTime(0, t + duration);
-
         src.connect(gain);
         gain.connect(ctx.destination);
         src.start(t);
