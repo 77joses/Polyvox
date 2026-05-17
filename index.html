@@ -2,119 +2,319 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <meta name="theme-color" content="#1B5E20">
     <title>PolyVox</title>
     <link rel="manifest" href="manifest.json">
-    <script src="https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js"></script>
-    <script src="https://surikov.github.io/webaudiofontdata/sound/0190_Chaos_sf2_file.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background: #121212;
             color: #ffffff;
             font-family: sans-serif;
-            padding: 16px;
+            overflow-x: hidden;
         }
-        h1 {
-            color: #F9A825;
-            text-align: center;
-            font-size: 28px;
-            padding: 16px 0;
-        }
-        .btn {
-            width: 100%;
-            padding: 14px;
-            margin: 6px 0;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        #btnRecord { background: #1B5E20; color: white; }
-        #btnStop { background: #B71C1C; color: white; }
-        #btnGenerate { background: #F9A825; color: black; }
-        .btn:disabled { opacity: 0.4; }
-        .staff {
-            margin: 12px 0;
-            padding: 12px;
-            border-radius: 8px;
-            background: #1E1E1E;
-        }
-        .staff-header {
+        #header {
+            background: #1B5E20;
+            padding: 12px 16px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
-        .staff-label {
-            font-size: 16px;
-            font-weight: bold;
+        #header h1 {
+            color: #F9A825;
+            font-size: 22px;
         }
-        .staff-controls button {
-            padding: 4px 10px;
-            margin-left: 4px;
-            border: none;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
+        #toolbar {
+            background: #1E1E1E;
+            padding: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            border-bottom: 1px solid #333;
         }
-        .btn-play { background: #F9A825; color: black; }
-        .btn-manual { background: #1565C0; color: white; }
-        .notes {
-            font-size: 14px;
-            color: #CCCCCC;
-            word-break: break-all;
-            min-height: 30px;
+        .tool-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
         }
-        .manual-input {
-            width: 100%;
-            background: #2A2A2A;
-            color: white;
+        .tool-label {
+            color: #888;
+            font-size: 11px;
+            margin-right: 2px;
+        }
+        .tbtn {
+            padding: 6px 10px;
             border: 1px solid #444;
             border-radius: 4px;
-            padding: 8px;
-            font-size: 14px;
-            margin-top: 8px;
-            display: none;
+            background: #2A2A2A;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .tbtn.active {
+            background: #F9A825;
+            color: black;
+            border-color: #F9A825;
+        }
+        .tbtn.record {
+            background: #1B5E20;
+            border-color: #2E7D32;
+        }
+        .tbtn.stop {
+            background: #B71C1C;
+            border-color: #C62828;
+        }
+        .tbtn.play {
+            background: #1565C0;
+            border-color: #1976D2;
         }
         #status {
             text-align: center;
             color: #F9A825;
-            padding: 8px;
-            font-size: 14px;
+            padding: 6px;
+            font-size: 13px;
+            background: #1A1A1A;
         }
-        #errorLog {
-            background: #3A0000;
-            color: #FF5555;
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin: 8px 0;
+        #scoreWrapper {
+            overflow-x: auto;
+            overflow-y: auto;
+            padding: 16px;
+            min-height: calc(100vh - 160px);
+        }
+        #scoreSvg {
+            display: block;
+        }
+        .instrument-label {
+            fill: #AAAAAA;
+            font-size: 11px;
+            font-family: sans-serif;
+        }
+        .staff-line {
+            stroke: #CCCCCC;
+            stroke-width: 1;
+        }
+        .bar-line {
+            stroke: #CCCCCC;
+            stroke-width: 1.5;
+        }
+        .clef-text {
+            fill: #FFFFFF;
+            font-family: serif;
+        }
+        .time-sig {
+            fill: #FFFFFF;
+            font-family: serif;
+            font-weight: bold;
+        }
+        .key-sig {
+            fill: #FFFFFF;
+            font-family: serif;
+        }
+        .notehead {
+            cursor: pointer;
+        }
+        .note-stem {
+            stroke: #FFFFFF;
+            stroke-width: 1.5;
+        }
+        .section-label {
+            fill: #F9A825;
+            font-size: 13px;
+            font-weight: bold;
+            font-family: sans-serif;
+        }
+        .brace {
+            fill: none;
+            stroke: #CCCCCC;
+            stroke-width: 2;
+        }
+        #keyModal {
             display: none;
-            word-break: break-all;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        #keyModal.show { display: flex; }
+        #keyModalBox {
+            background: #1E1E1E;
+            border-radius: 12px;
+            padding: 20px;
+            width: 90%;
+            max-width: 360px;
+        }
+        #keyModalBox h3 {
+            color: #F9A825;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .key-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .key-btn {
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            background: #2A2A2A;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .key-btn.selected {
+            background: #F9A825;
+            color: black;
+        }
+        #timeSigModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        #timeSigModal.show { display: flex; }
+        #timeSigModalBox {
+            background: #1E1E1E;
+            border-radius: 12px;
+            padding: 20px;
+            width: 90%;
+            max-width: 360px;
+        }
+        #timeSigModalBox h3 {
+            color: #F9A825;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .tsig-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .tsig-btn {
+            padding: 14px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            background: #2A2A2A;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .tsig-btn.selected {
+            background: #F9A825;
+            color: black;
+        }
+        .modal-close {
+            width: 100%;
+            padding: 10px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
+
+<div id="header">
     <h1>🎵 PolyVox</h1>
-    <div id="status">Loading organ...</div>
-    <div id="errorLog"></div>
+    <div style="display:flex;gap:8px">
+        <button class="tbtn record" id="btnRecord">🎤 Record</button>
+        <button class="tbtn stop" id="btnStop" disabled>⏹</button>
+        <button class="tbtn play" id="btnPlay" disabled>▶ Play</button>
+    </div>
+</div>
 
-    <button class="btn" id="btnRecord" disabled>🎤 Record Vocals</button>
-    <button class="btn" id="btnStop" disabled>⏹ Stop</button>
-    <button class="btn" id="btnGenerate" disabled>🎼 Generate Score</button>
+<div id="toolbar">
+    <div class="tool-group">
+        <span class="tool-label">NOTE:</span>
+        <button class="tbtn active" id="dur-1" onclick="setDuration(1)">𝅝</button>
+        <button class="tbtn" id="dur-2" onclick="setDuration(2)">𝅗𝅥</button>
+        <button class="tbtn" id="dur-4" onclick="setDuration(4)">♩</button>
+        <button class="tbtn" id="dur-8" onclick="setDuration(8)">♪</button>
+        <button class="tbtn" id="dur-16" onclick="setDuration(16)">𝅘𝅥𝅯</button>
+    </div>
+    <div class="tool-group">
+        <button class="tbtn" id="btnDot" onclick="toggleDot()">•</button>
+        <button class="tbtn" id="btnSharp" onclick="toggleAccidental('sharp')">♯</button>
+        <button class="tbtn" id="btnFlat" onclick="toggleAccidental('flat')">♭</button>
+        <button class="tbtn" id="btnRest" onclick="toggleRest()">𝄽</button>
+        <button class="tbtn" id="btnErase" onclick="toggleErase()">✕</button>
+    </div>
+    <div class="tool-group">
+        <span class="tool-label">KEY:</span>
+        <button class="tbtn" onclick="showKeyModal()">C maj</button>
+    </div>
+    <div class="tool-group">
+        <span class="tool-label">TIME:</span>
+        <button class="tbtn" id="btnTimeSig" onclick="showTimeSigModal()">4/4</button>
+    </div>
+    <div class="tool-group">
+        <button class="tbtn" onclick="transposeUp()">▲</button>
+        <button class="tbtn" onclick="transposeDown()">▼</button>
+        <button class="tbtn" onclick="addBar()">+Bar</button>
+        <button class="tbtn" onclick="window.print()">🖨</button>
+    </div>
+</div>
 
-    <div id="staffContainer"></div>
+<div id="status">Ready — Record your voice or tap a staff to add notes</div>
 
-    <script>
-    window.onerror = function(msg, src, line) {
-        const log = document.getElementById('errorLog');
-        log.style.display = 'block';
-        log.textContent = 'ERROR: ' + msg + ' (line ' + line + ')';
-    };
-    </script>
-    <script src="app.js"></script>
+<div id="scoreWrapper">
+    <svg id="scoreSvg"></svg>
+</div>
+
+<!-- Key Signature Modal -->
+<div id="keyModal">
+    <div id="keyModalBox">
+        <h3>Select Key</h3>
+        <div class="key-grid">
+            <button class="key-btn selected" onclick="setKey('C')">C</button>
+            <button class="key-btn" onclick="setKey('G')">G</button>
+            <button class="key-btn" onclick="setKey('D')">D</button>
+            <button class="key-btn" onclick="setKey('A')">A</button>
+            <button class="key-btn" onclick="setKey('E')">E</button>
+            <button class="key-btn" onclick="setKey('B')">B</button>
+            <button class="key-btn" onclick="setKey('F')">F</button>
+            <button class="key-btn" onclick="setKey('Bb')">B♭</button>
+            <button class="key-btn" onclick="setKey('Eb')">E♭</button>
+            <button class="key-btn" onclick="setKey('Ab')">A♭</button>
+            <button class="key-btn" onclick="setKey('Db')">D♭</button>
+            <button class="key-btn" onclick="setKey('Gb')">G♭</button>
+        </div>
+        <button class="modal-close" onclick="closeKeyModal()">Done</button>
+    </div>
+</div>
+
+<!-- Time Signature Modal -->
+<div id="timeSigModal">
+    <div id="timeSigModalBox">
+        <h3>Select Time Signature</h3>
+        <div class="tsig-grid">
+            <button class="tsig-btn" onclick="setTimeSig(2,4)">2/4</button>
+            <button class="tsig-btn selected" onclick="setTimeSig(4,4)">4/4</button>
+            <button class="tsig-btn" onclick="setTimeSig(3,4)">3/4</button>
+            <button class="tsig-btn" onclick="setTimeSig(6,8)">6/8</button>
+        </div>
+        <button class="modal-close" onclick="closeTimeSigModal()">Done</button>
+    </div>
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>
