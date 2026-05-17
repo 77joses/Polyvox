@@ -1,10 +1,9 @@
-const CACHE = 'polyvox-v22';
+const CACHE = 'polyvox-v23';
 const FILES = [
     '/',
     '/index.html',
     '/app.js',
-    '/manifest.json',
-    '/Roland-JX-8P-Pipe-Organ-C4.wav'
+    '/manifest.json'
 ];
 
 self.addEventListener('install', e => {
