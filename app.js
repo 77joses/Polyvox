@@ -270,14 +270,10 @@ function playOrgan(startDelay) {
 }
 
 function playAll() {
-    const delay = 0.3;
-    if(recordedUrl) {
-        setTimeout(() => {
-            const audio = new Audio(recordedUrl);
-            audio.play();
-        }, delay * 1000);
-    }
-    playOrgan(delay);
+    const audio = new Audio(recordedUrl);
+    audio.play();
+    playOrgan(0);
+}
 }
 
 function toggleManual() {
