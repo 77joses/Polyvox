@@ -147,6 +147,15 @@ function freqToNote(freq) {
     return n[midi%12] + (Math.floor(midi/12)-1);
 }
 
+function noteToFreq(note) {
+    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const name = note.slice(0,-1);
+    const oct = parseInt(note.slice(-1));
+    if(isNaN(oct)) return 0;
+    const midi = n.indexOf(name)+(oct+1)*12;
+    return 440*Math.pow(2,(midi-69)/12);
+}
+
 function generateScore() {
     if(pitchTimeline.length === 0) {
         setStatus('⚠️ No notes detected!');
@@ -227,9 +236,9 @@ function playOrgan(startDelay) {
     const g2 = ctx.createGain();
     const g3 = ctx.createGain();
 
-    g1.gain.value = 0.6;
-    g2.gain.value = 0.3;
-    g3.gain.value = 0.1;
+    g1.gain.value = 1.0;
+    g2.gain.value = 0.6;
+    g3.gain.value = 0.3;
 
     osc1.connect(g1); g1.connect(masterGain);
     osc2.connect(g2); g2.connect(masterGain);
@@ -242,10 +251,10 @@ function playOrgan(startDelay) {
     pitchTimeline.forEach(point => {
         const t = ctx.currentTime + startDelay + (point.time - firstTime);
         if(point.freq > 0) {
-            osc1.frequency.setValueAtTime(point.freq, t);
-            osc2.frequency.setValueAtTime(point.freq * 2, t);
-            osc3.frequency.setValueAtTime(point.freq * 3, t);
-            masterGain.gain.setValueAtTime(0.4, t);
+            osc1.frequency.setValueAtTime(point.freq * 2, t);
+            osc2.frequency.setValueAtTime(point.freq * 4, t);
+            osc3.frequency.setValueAtTime(point.freq * 6, t);
+            masterGain.gain.setValueAtTime(0.8, t);
         } else {
             masterGain.gain.setValueAtTime(0, t);
         }
@@ -299,15 +308,6 @@ function buildTimelineFromNotes(notes) {
         timeline.push({time: end, freq: 0});
     });
     return timeline;
-}
-
-function noteToFreq(note) {
-    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    const name = note.slice(0,-1);
-    const oct = parseInt(note.slice(-1));
-    if(isNaN(oct)) return 0;
-    const midi = n.indexOf(name)+(oct+1)*12;
-    return 440*Math.pow(2,(midi-69)/12);
 }
 
 if('serviceWorker' in navigator) {
