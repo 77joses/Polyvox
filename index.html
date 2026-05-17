@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#1B5E20">
     <title>PolyVox</title>
     <link rel="manifest" href="manifest.json">
+    <script src="https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js"></script>
+    <script src="https://surikov.github.io/webaudiofontdata/sound/0190_Chaos_sf2_file.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -59,9 +61,7 @@
             cursor: pointer;
         }
         .btn-play { background: #F9A825; color: black; }
-        .btn-auto { background: #2E7D32; color: white; }
         .btn-manual { background: #1565C0; color: white; }
-        .btn-lock { background: #4A4A4A; color: white; }
         .notes {
             font-size: 14px;
             color: #CCCCCC;
@@ -99,10 +99,10 @@
 </head>
 <body>
     <h1>🎵 PolyVox</h1>
-    <div id="status">Ready to record</div>
+    <div id="status">Loading organ...</div>
     <div id="errorLog"></div>
 
-    <button class="btn" id="btnRecord">🎤 Record Vocals</button>
+    <button class="btn" id="btnRecord" disabled>🎤 Record Vocals</button>
     <button class="btn" id="btnStop" disabled>⏹ Stop</button>
     <button class="btn" id="btnGenerate" disabled>🎼 Generate Score</button>
 
