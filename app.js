@@ -1,4 +1,4 @@
-const SAMPLE_RATE = 44100;
+  const SAMPLE_RATE = 44100;
 let audioContext, analyser, mediaStream;
 let isRecording = false;
 let recordedNotes = [];
@@ -219,6 +219,28 @@ function playVoice() {
     audio.play();
 }
 
+function smoothPitchTimeline(timeline) {
+    if(timeline.length === 0) return [];
+    const smoothed = [];
+    const windowSize = 8;
+    for(let i=0; i<timeline.length; i++) {
+        let sum = 0;
+        let count = 0;
+        for(let j=Math.max(0,i-windowSize);
+            j<Math.min(timeline.length,i+windowSize); j++) {
+            if(timeline[j].freq > 0) {
+                sum += timeline[j].freq;
+                count++;
+            }
+        }
+        smoothed.push({
+            time: timeline[i].time,
+            freq: count > 0 ? sum/count : 0
+        });
+    }
+    return smoothed;
+}
+
 function playOrgan(startDelay) {
     if(pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
@@ -244,23 +266,31 @@ function playOrgan(startDelay) {
     osc2.connect(g2); g2.connect(masterGain);
     osc3.connect(g3); g3.connect(masterGain);
     masterGain.connect(ctx.destination);
+
+    const smoothed = smoothPitchTimeline(pitchTimeline);
+    const firstTime = smoothed[0].time;
+
+    const initialFreq = smoothed.find(p => p.freq > 0);
+    if(initialFreq) {
+        osc1.frequency.setValueAtTime(initialFreq.freq * 2, ctx.currentTime);
+        osc2.frequency.setValueAtTime(initialFreq.freq * 4, ctx.currentTime);
+        osc3.frequency.setValueAtTime(initialFreq.freq * 6, ctx.currentTime);
+    }
     masterGain.gain.setValueAtTime(0, ctx.currentTime);
 
-    const firstTime = pitchTimeline[0].time;
-
-    pitchTimeline.forEach(point => {
+    smoothed.forEach((point, i) => {
         const t = ctx.currentTime + startDelay + (point.time - firstTime);
         if(point.freq > 0) {
-            osc1.frequency.setValueAtTime(point.freq * 2, t);
-            osc2.frequency.setValueAtTime(point.freq * 4, t);
-            osc3.frequency.setValueAtTime(point.freq * 6, t);
-            masterGain.gain.setValueAtTime(1.5, t);
+            osc1.frequency.linearRampToValueAtTime(point.freq * 2, t);
+            osc2.frequency.linearRampToValueAtTime(point.freq * 4, t);
+            osc3.frequency.linearRampToValueAtTime(point.freq * 6, t);
+            masterGain.gain.linearRampToValueAtTime(1.5, t);
         } else {
-            masterGain.gain.setValueAtTime(0, t);
+            masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
         }
     });
 
-    const totalTime = pitchTimeline[pitchTimeline.length-1].time - firstTime;
+    const totalTime = smoothed[smoothed.length-1].time - firstTime;
     osc1.start(ctx.currentTime + startDelay);
     osc2.start(ctx.currentTime + startDelay);
     osc3.start(ctx.currentTime + startDelay);
@@ -309,4 +339,4 @@ function buildTimelineFromNotes(notes) {
 
 if('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
-}
+}        
