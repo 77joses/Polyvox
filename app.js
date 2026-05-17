@@ -1,5 +1,5 @@
 const SAMPLE_RATE = 44100;
-const ORGAN_SAMPLE_NOTE = 60;
+const ORGAN_SAMPLE_FREQ = 261.63;
 let audioContext, analyser, mediaStream;
 let isRecording = false;
 let recordedNotes = [];
@@ -25,14 +25,15 @@ function setStatus(msg) {
 async function loadOrganSample() {
     if(organSampleBuffer) return;
     try {
+        setStatus('⏳ Loading organ sample...');
         const response = await fetch('Roland-JX-8P-Pipe-Organ-C4.wav');
         const arrayBuffer = await response.arrayBuffer();
         const ctx = new AudioContext();
         organSampleBuffer = await ctx.decodeAudioData(arrayBuffer);
         await ctx.close();
-        setStatus('🎹 Organ sample loaded!');
+        setStatus('✅ Ready to record');
     } catch(e) {
-        setStatus('Error loading organ sample: ' + e.message);
+        setStatus('Error loading organ: ' + e.message);
     }
 }
 
@@ -40,7 +41,6 @@ window.addEventListener('load', loadOrganSample);
 
 async function startRecording() {
     if(!organSampleBuffer) {
-        setStatus('⏳ Loading organ sample...');
         await loadOrganSample();
     }
     try {
@@ -180,6 +180,41 @@ function freqToNote(freq) {
     return n[midi%12] + (Math.floor(midi/12)-1);
 }
 
+function groupPitchTimeline(timeline) {
+    if(timeline.length === 0) return [];
+    const groups = [];
+    let current = null;
+
+    timeline.forEach((point, i) => {
+        const midi = point.freq > 0 ?
+            Math.round(12*Math.log2(point.freq/440)+69) : -1;
+
+        if(!current) {
+            current = {
+                startTime: point.time,
+                freq: point.freq,
+                midi: midi
+            };
+        } else if(midi !== current.midi) {
+            current.endTime = point.time;
+            groups.push(current);
+            current = {
+                startTime: point.time,
+                freq: point.freq,
+                midi: midi
+            };
+        }
+    });
+
+    if(current) {
+        current.endTime = timeline[timeline.length-1].time + 0.1;
+        groups.push(current);
+    }
+
+    return groups.filter(g => g.freq > 0 &&
+        (g.endTime - g.startTime) > 0.05);
+}
+
 function generateScore() {
     if(pitchTimeline.length === 0) {
         setStatus('⚠️ No notes detected!');
@@ -246,28 +281,23 @@ function playVoice() {
 function playOrgan(startDelay) {
     if(!organSampleBuffer || pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
-    const sampleFreq = 261.63;
+    const groups = groupPitchTimeline(pitchTimeline);
+    const firstTime = groups.length > 0 ? groups[0].startTime : 0;
 
-    pitchTimeline.forEach((point, i) => {
-        if(point.freq <= 0) return;
-        const next = pitchTimeline[i+1];
-        const duration = next ?
-            (next.time - point.time) :
-            0.1;
-        if(duration <= 0) return;
+    groups.forEach(group => {
+        const t = ctx.currentTime + startDelay +
+            (group.startTime - firstTime);
+        const duration = group.endTime - group.startTime;
 
         const src = ctx.createBufferSource();
         src.buffer = organSampleBuffer;
-        src.playbackRate.value = point.freq / sampleFreq;
+        src.playbackRate.value = group.freq / ORGAN_SAMPLE_FREQ;
         src.loop = true;
 
         const gain = ctx.createGain();
-        const t = ctx.currentTime + startDelay + point.time -
-            pitchTimeline[0].time;
-
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.8, t + 0.02);
-        gain.gain.setValueAtTime(0.8, t + duration - 0.02);
+        gain.gain.linearRampToValueAtTime(1.6, t + 0.03);
+        gain.gain.setValueAtTime(1.6, t + duration - 0.03);
         gain.gain.linearRampToValueAtTime(0, t + duration);
 
         src.connect(gain);
