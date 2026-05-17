@@ -1,7 +1,4 @@
 const SAMPLE_RATE = 44100;
-const ORGAN_SAMPLE_FREQ = 261.63;
-const MIN_VOCAL_FREQ = 100;
-const MAX_VOCAL_FREQ = 320;
 let audioContext, analyser, mediaStream;
 let isRecording = false;
 let recordedNotes = [];
@@ -14,35 +11,35 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let pitchTimeline = [];
 let recordingStartTime = 0;
-let organSampleBuffer = null;
-
-document.getElementById('btnRecord').addEventListener('click', startRecording);
-document.getElementById('btnStop').addEventListener('click', stopRecording);
-document.getElementById('btnGenerate').addEventListener('click', generateScore);
+let player = null;
+let organFont = null;
 
 function setStatus(msg) {
     document.getElementById('status').textContent = msg;
 }
 
-async function loadOrganSample() {
-    if(organSampleBuffer) return;
+function initAudioFont() {
     try {
-        setStatus('⏳ Loading organ sample...');
-        const response = await fetch('Roland-JX-8P-Pipe-Organ-C4.wav');
-        const arrayBuffer = await response.arrayBuffer();
         const ctx = new AudioContext();
-        organSampleBuffer = await ctx.decodeAudioData(arrayBuffer);
-        await ctx.close();
+        player = new WebAudioFontPlayer();
+        organFont = _tone_0190_Chaos_sf2_file;
+        player.loader.decodeAfterLoading(ctx, '_tone_0190_Chaos_sf2_file');
         setStatus('✅ Ready to record');
+        document.getElementById('btnRecord').disabled = false;
     } catch(e) {
         setStatus('Error loading organ: ' + e.message);
     }
 }
 
-window.addEventListener('load', loadOrganSample);
+window.addEventListener('load', () => {
+    setTimeout(initAudioFont, 500);
+});
+
+document.getElementById('btnRecord').addEventListener('click', startRecording);
+document.getElementById('btnStop').addEventListener('click', stopRecording);
+document.getElementById('btnGenerate').addEventListener('click', generateScore);
 
 async function startRecording() {
-    if(!organSampleBuffer) await loadOrganSample();
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio:{
@@ -94,13 +91,6 @@ function stopRecording() {
     setStatus('✅ Detected ' + recordedNotes.length + ' notes');
 }
 
-function fixOctave(freq) {
-    if(freq <= 0) return 0;
-    while(freq > MAX_VOCAL_FREQ) freq /= 2;
-    while(freq < MIN_VOCAL_FREQ) freq *= 2;
-    return freq;
-}
-
 function detectPitchLoop() {
     if(!isRecording) return;
     const buffer = new Float32Array(analyser.fftSize);
@@ -112,14 +102,13 @@ function detectPitchLoop() {
     if(rms > 0.001) {
         const pitch = autocorrelate(buffer, SAMPLE_RATE);
         if(pitch > 80 && pitch < 1200) {
-            const fixed = fixOctave(pitch);
             const last = pitchTimeline[pitchTimeline.length-1];
             const changed = !last || last.freq === 0 ||
-                Math.abs(fixed - last.freq) / last.freq > 0.02;
+                Math.abs(pitch - last.freq) / last.freq > 0.02;
             if(changed) {
-                pitchTimeline.push({time: elapsed, freq: fixed});
+                pitchTimeline.push({time: elapsed, freq: pitch});
             }
-            const note = freqToNote(fixed);
+            const note = freqToNote(pitch);
             if(note === lastNote) {
                 noteHoldCount++;
             } else {
@@ -188,13 +177,17 @@ function freqToNote(freq) {
     return n[midi%12] + (Math.floor(midi/12)-1);
 }
 
+function freqToMidi(freq) {
+    if(freq<=0) return -1;
+    return Math.round(12*Math.log2(freq/440)+69);
+}
+
 function groupPitchTimeline(timeline) {
     if(timeline.length === 0) return [];
     const groups = [];
     let current = null;
     timeline.forEach(point => {
-        const midi = point.freq > 0 ?
-            Math.round(12*Math.log2(point.freq/440)+69) : -1;
+        const midi = point.freq > 0 ? freqToMidi(point.freq) : -1;
         if(!current) {
             current = {
                 startTime: point.time,
@@ -212,8 +205,7 @@ function groupPitchTimeline(timeline) {
         }
     });
     if(current) {
-        current.endTime =
-            timeline[timeline.length-1].time + 0.1;
+        current.endTime = timeline[timeline.length-1].time + 0.1;
         groups.push(current);
     }
     return groups.filter(g =>
@@ -266,7 +258,7 @@ function renderStaffs() {
         '<div class="staff-header">'+
         '<span class="staff-label" style="color:#4CAF50">🎹 Organ</span>'+
         '<div class="staff-controls">'+
-        '<button class="btn-play" onclick="playOrgan(0)">▶</button>'+
+        '<button class="btn-play" onclick="playOrgan()">▶</button>'+
         '<button class="btn-manual" onclick="toggleManual()">✏️</button>'+
         '</div></div>'+
         '<div class="notes" id="notes-organ">'+
@@ -283,30 +275,25 @@ function playVoice() {
     audio.play();
 }
 
-function playOrgan(startDelay) {
-    if(!organSampleBuffer || pitchTimeline.length === 0) return;
+function playOrgan() {
+    if(!player || !organFont || pitchTimeline.length === 0) return;
     const ctx = new AudioContext();
     const groups = groupPitchTimeline(pitchTimeline);
     if(groups.length === 0) return;
     const firstTime = groups[0].startTime;
 
     groups.forEach(group => {
-        const t = ctx.currentTime + startDelay +
-            (group.startTime - firstTime);
+        const when = ctx.currentTime + (group.startTime - firstTime);
         const duration = group.endTime - group.startTime;
-        const src = ctx.createBufferSource();
-        src.buffer = organSampleBuffer;
-        src.playbackRate.value = group.freq / ORGAN_SAMPLE_FREQ;
-        src.loop = true;
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(1.6, t + 0.03);
-        gain.gain.setValueAtTime(1.6, t + duration - 0.03);
-        gain.gain.linearRampToValueAtTime(0, t + duration);
-        src.connect(gain);
-        gain.connect(ctx.destination);
-        src.start(t);
-        src.stop(t + duration);
+        player.queueWaveTable(
+            ctx,
+            ctx.destination,
+            organFont,
+            when,
+            group.midi,
+            duration,
+            0.8
+        );
     });
 }
 
@@ -315,7 +302,7 @@ function playAll() {
         const audio = new Audio(recordedUrl);
         audio.play();
     }
-    playOrgan(0);
+    playOrgan();
 }
 
 function toggleManual() {
@@ -335,8 +322,8 @@ function updateOrganManual() {
 function buildTimelineFromNotes(notes) {
     const timeline = [];
     const dur = 0.5;
+    const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     notes.forEach((note, i) => {
-        const n=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
         const name = note.slice(0,-1);
         const oct = parseInt(note.slice(-1));
         if(isNaN(oct)) return;
