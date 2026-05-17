@@ -270,10 +270,11 @@ function playOrgan(startDelay) {
 }
 
 function playAll() {
-    const audio = new Audio(recordedUrl);
-    audio.play();
+    if(recordedUrl) {
+        const audio = new Audio(recordedUrl);
+        audio.play();
+    }
     playOrgan(0);
-}
 }
 
 function toggleManual() {
