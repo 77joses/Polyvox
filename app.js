@@ -1,113 +1,101 @@
 // ============================================================
-// POLYVOX - Stage 1: Score Foundation
+// POLYVOX - Stage 1: Score Foundation (Fixed)
 // ============================================================
 
-// --- Constants ---
 const STAFF_LINE_COUNT = 5;
-const STAFF_LINE_SPACING = 10; // px between lines
+const STAFF_LINE_SPACING = 12;
 const STAFF_HEIGHT = STAFF_LINE_SPACING * 4;
 const STAFF_MARGIN_TOP = 40;
-const STAFF_MARGIN_LEFT = 60;
-const BAR_WIDTH = 180;
-const SYSTEM_PADDING = 30;
-const BRACE_WIDTH = 12;
-const CLEF_WIDTH = 30;
-const KEYSIG_WIDTH = 20;
-const TIMESIG_WIDTH = 20;
-const NOTE_HEAD_RADIUS = 4.5;
+const STAFF_MARGIN_LEFT = 70;
+const BAR_WIDTH = 200;
+const NOTE_HEAD_RADIUS = 5;
 const STEM_HEIGHT = 35;
 const BARS_PER_LINE = 4;
-
+const CLEF_WIDTH = 35;
+const TIMESIG_WIDTH = 24;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// --- State ---
-let keyIndex = 0; // 0=C, 1=G, 2=D... -1=F, -2=Bb...
+let keyIndex = 0;
 let timeSig = '4/4';
 let bpm = 120;
 let totalBars = 8;
-let selectedDur = 'quarter';
+let selectedDur = 'whole';
 let isDotted = false;
 let isSharp = false;
 let isFlat = false;
 let isRest = false;
+let isDeleteMode = false;
 let isRecording = false;
 let recordedUrl = null;
 let mediaRecorder = null;
 let recordedChunks = [];
-let audioContext = null;
+let audioCtx = null;
 let analyser = null;
 let mediaStream = null;
 let recordedNotes = [];
 let lastNote = null;
 let noteHoldCount = 0;
-let recordingStartTime = 0;
 
-// Score data — one array per staff
-let scoreData = {
-    voice: [],
-    organTreble: [],
-    organBass: [],
-    coro: [],
-    drums: []
-};
-
-// Key names
 const KEY_NAMES = ['C','G','D','A','E','B','F#','Db','Ab','Eb','Bb','F'];
 const KEY_SHARPS = [0,1,2,3,4,5,6,0,0,0,0,0];
 const KEY_FLATS  = [0,0,0,0,0,0,0,6,5,4,3,1];
 
-// Treble clef pitch names per line/space (bottom to top)
-// Line 0 = bottom line (E4), Space 0 = F4, etc.
 const TREBLE_PITCHES = [
-    'E4','F4','G4','A4','B4','C5','D5','E5','F5','G5','A5','B5','C6'
+    'E4','F4','G4','A4','B4','C5','D5','E5',
+    'F5','G5','A5','B5','C6','D6','E6'
 ];
 const BASS_PITCHES = [
-    'G2','A2','B2','C3','D3','E3','F3','G3','A3','B3','C4','D4','E4'
+    'G2','A2','B2','C3','D3','E3','F3','G3',
+    'A3','B3','C4','D4','E4','F4','G4'
 ];
 
-// Staff definitions
 const STAVES = [
-    {id:'voice',     label:'Voice',  clef:'treble', pitches:TREBLE_PITCHES, color:'#000', editable:false},
-    {id:'organTreble',label:'Organ', clef:'treble', pitches:TREBLE_PITCHES, color:'#000', editable:true, brace:'organ'},
-    {id:'organBass', label:'',       clef:'bass',   pitches:BASS_PITCHES,   color:'#000', editable:true, brace:'organ'},
-    {id:'coro',      label:'Coro',   clef:'treble', pitches:TREBLE_PITCHES, color:'#000', editable:true},
-    {id:'drums',     label:'Drums',  clef:'perc',   pitches:TREBLE_PITCHES, color:'#000', editable:true}
+    {id:'voice',       label:'Voice', clef:'treble',
+     pitches:TREBLE_PITCHES, editable:false},
+    {id:'organTreble', label:'Organ', clef:'treble',
+     pitches:TREBLE_PITCHES, editable:true},
+    {id:'organBass',   label:'',      clef:'bass',
+     pitches:BASS_PITCHES,   editable:true},
+    {id:'coro',        label:'Coro',  clef:'treble',
+     pitches:TREBLE_PITCHES, editable:true},
+    {id:'drums',       label:'Drums', clef:'perc',
+     pitches:TREBLE_PITCHES, editable:true}
 ];
 
-// --- SVG Helper ---
+let scoreData = {
+    voice:[], organTreble:[], organBass:[], coro:[], drums:[]
+};
+
 function svgEl(tag, attrs) {
     const el = document.createElementNS(SVG_NS, tag);
     for(const [k,v] of Object.entries(attrs)) {
-        el.setAttributeNS(null, k, v);
+        el.setAttributeNS(null, k, String(v));
     }
     return el;
 }
 
 function svgText(content, attrs) {
-    const el = svgEl('text', attrs);
+    const el = document.createElementNS(SVG_NS, 'text');
+    for(const [k,v] of Object.entries(attrs)) {
+        el.setAttributeNS(null, k, String(v));
+    }
     el.textContent = content;
     return el;
 }
 
-// --- Layout Calculations ---
+function getStaffSpacing() {
+    return STAFF_HEIGHT + 60;
+}
+
 function getSystemHeight() {
-    // voice + organ(treble+bass) + coro + drums + spacing
-    return STAVES.length * (STAFF_HEIGHT + 50) + 20;
+    return STAVES.length * getStaffSpacing() + 20;
 }
 
 function getStaffY(staffIndex, systemY) {
-    let y = systemY;
-    for(let i = 0; i < staffIndex; i++) {
-        y += STAFF_HEIGHT + 50;
-        if(STAVES[i].brace === 'organ' && STAVES[i+1] &&
-           STAVES[i+1].brace === 'organ') {
-            y -= 20;
-        }
-    }
-    return y;
+    return systemY + staffIndex * getStaffSpacing();
 }
 
-function getLinesPerSystem() {
+function getLinesCount() {
     return Math.ceil(totalBars / BARS_PER_LINE);
 }
 
@@ -116,377 +104,273 @@ function getTotalWidth() {
 }
 
 function getTotalHeight() {
-    return getLinesPerSystem() * (getSystemHeight() + 40) + 60;
+    return getLinesCount() * (getSystemHeight() + 60) + 80;
 }
 
-// --- Draw Score ---
+function getHeaderWidth(isFirstLine) {
+    let w = CLEF_WIDTH + 8;
+    if(isFirstLine) w += TIMESIG_WIDTH + 8;
+    return w;
+}
+
 function drawScore() {
     const svg = document.getElementById('scoreSvg');
-    svg.innerHTML = '';
+    if(!svg) return;
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
 
     const W = getTotalWidth();
     const H = getTotalHeight();
     svg.setAttributeNS(null, 'width', W);
     svg.setAttributeNS(null, 'height', H);
-    svg.setAttributeNS(null, 'viewBox', `0 0 ${W} ${H}`);
-    svg.style.background = '#f5f0e8';
 
-    const lines = getLinesPerSystem();
+    // White background
+    svg.appendChild(svgEl('rect', {
+        x:0, y:0, width:W, height:H, fill:'#f5f0e8'
+    }));
 
+    const lines = getLinesCount();
     for(let line = 0; line < lines; line++) {
-        const systemY = 40 + line * (getSystemHeight() + 40);
-        drawSystem(svg, line, systemY, W);
+        const systemY = 40 + line * (getSystemHeight() + 60);
+        const startBar = line * BARS_PER_LINE;
+        const endBar = Math.min(startBar + BARS_PER_LINE, totalBars);
+        const isFirstLine = line === 0;
+        drawSystem(svg, systemY, startBar, endBar, isFirstLine);
     }
 
-    // Attach touch/click listeners
-    attachNoteInputListeners(svg);
+    attachClickListener(svg);
 }
 
-function drawSystem(svg, lineIndex, systemY, W) {
-    const startBar = lineIndex * BARS_PER_LINE;
-    const endBar = Math.min(startBar + BARS_PER_LINE, totalBars);
+function drawSystem(svg, systemY, startBar, endBar, isFirstLine) {
     const barsInSystem = endBar - startBar;
-    const systemWidth = STAFF_MARGIN_LEFT +
+    const headerW = getHeaderWidth(isFirstLine);
+    const systemW = STAFF_MARGIN_LEFT + headerW +
         barsInSystem * BAR_WIDTH + 10;
 
     STAVES.forEach((staff, si) => {
         const staffY = getStaffY(si, systemY);
-        drawStaff(svg, staff, si, staffY,
-            systemWidth, startBar, endBar, lineIndex === 0);
+        drawOneStaff(svg, staff, si, staffY,
+            systemW, startBar, endBar, isFirstLine);
     });
 
-    // Draw brace for organ
-    drawBrace(svg, systemY);
-
-    // Draw system bar line at left
+    // System bracket
     const topY = getStaffY(0, systemY);
-    const bottomY = getStaffY(STAVES.length-1, systemY) + STAFF_HEIGHT;
+    const botY = getStaffY(STAVES.length-1, systemY) + STAFF_HEIGHT;
     svg.appendChild(svgEl('line', {
-        x1: STAFF_MARGIN_LEFT,
-        y1: topY,
-        x2: STAFF_MARGIN_LEFT,
-        y2: bottomY,
-        stroke: '#000',
-        'stroke-width': 1.5
+        x1:STAFF_MARGIN_LEFT, y1:topY,
+        x2:STAFF_MARGIN_LEFT, y2:botY,
+        stroke:'#000', 'stroke-width':2
     }));
+
+    // Organ brace
+    const orgTop = getStaffY(1, systemY);
+    const orgBot = getStaffY(2, systemY) + STAFF_HEIGHT;
+    const braceEl = svgText('{', {
+        x: STAFF_MARGIN_LEFT - 14,
+        y: orgTop + (orgBot - orgTop)/2 + 8,
+        'font-size': (orgBot - orgTop) + 10,
+        'font-family': 'serif',
+        fill: '#000'
+    });
+    svg.appendChild(braceEl);
 }
 
-function drawStaff(svg, staff, staffIndex, staffY,
-    systemWidth, startBar, endBar, isFirst) {
+function drawOneStaff(svg, staff, si, staffY,
+        systemW, startBar, endBar, isFirstLine) {
 
-    // Draw 5 staff lines
-    for(let l = 0; l < STAFF_LINE_COUNT; l++) {
-        const y = staffY + l * STAFF_LINE_SPACING;
+    // 5 staff lines
+    for(let l = 0; l < 5; l++) {
+        const ly = staffY + l * STAFF_LINE_SPACING;
         svg.appendChild(svgEl('line', {
-            x1: STAFF_MARGIN_LEFT,
-            y1: y,
-            x2: systemWidth,
-            y2: y,
-            stroke: '#000',
-            'stroke-width': 0.8
+            x1:STAFF_MARGIN_LEFT, y1:ly,
+            x2:systemW, y2:ly,
+            stroke:'#000', 'stroke-width':0.9
         }));
     }
 
-    // Staff label
+    // Label
     if(staff.label) {
         svg.appendChild(svgText(staff.label, {
-            x: 4,
-            y: staffY + STAFF_HEIGHT/2 + 4,
-            'font-size': 11,
-            'font-family': 'serif',
-            fill: '#333'
+            x:4, y:staffY + STAFF_HEIGHT/2 + 4,
+            'font-size':12, 'font-family':'serif', fill:'#333'
         }));
     }
+
+    let x = STAFF_MARGIN_LEFT + 4;
 
     // Clef
-    drawClef(svg, staff.clef, STAFF_MARGIN_LEFT + 4, staffY);
+    if(staff.clef === 'treble') {
+        svg.appendChild(svgText('𝄞', {
+            x:x, y:staffY + STAFF_HEIGHT + 2,
+            'font-size':46, 'font-family':'serif', fill:'#000'
+        }));
+    } else if(staff.clef === 'bass') {
+        svg.appendChild(svgText('𝄢', {
+            x:x, y:staffY + STAFF_HEIGHT - 4,
+            'font-size':30, 'font-family':'serif', fill:'#000'
+        }));
+    } else {
+        svg.appendChild(svgEl('rect', {
+            x:x+2, y:staffY+3, width:4,
+            height:STAFF_HEIGHT-6, fill:'#000'
+        }));
+        svg.appendChild(svgEl('rect', {
+            x:x+10, y:staffY+3, width:4,
+            height:STAFF_HEIGHT-6, fill:'#000'
+        }));
+    }
+    x += CLEF_WIDTH;
 
-    // Key signature
-    let xOffset = STAFF_MARGIN_LEFT + CLEF_WIDTH + 4;
-    drawKeySignature(svg, staff.clef, xOffset, staffY);
-    xOffset += getKeyWidth();
-
-    // Time signature (first system only)
-    if(isFirst) {
-        drawTimeSig(svg, xOffset, staffY);
-        xOffset += TIMESIG_WIDTH + 4;
+    // Time signature (first line only)
+    if(isFirstLine) {
+        const parts = timeSig.split('/');
+        svg.appendChild(svgText(parts[0], {
+            x:x+2, y:staffY + STAFF_LINE_SPACING*2,
+            'font-size':18, 'font-weight':'bold',
+            'font-family':'serif', fill:'#000'
+        }));
+        svg.appendChild(svgText(parts[1], {
+            x:x+2, y:staffY + STAFF_HEIGHT,
+            'font-size':18, 'font-weight':'bold',
+            'font-family':'serif', fill:'#000'
+        }));
+        x += TIMESIG_WIDTH + 8;
     }
 
-    // Bar lines and note areas
-    let barX = STAFF_MARGIN_LEFT + getHeaderWidth(isFirst);
+    // Bars
+    let barX = STAFF_MARGIN_LEFT + getHeaderWidth(isFirstLine);
     for(let b = startBar; b < endBar; b++) {
-        // Bar line at end
         const barEndX = barX + BAR_WIDTH;
-        svg.appendChild(svgEl('line', {
-            x1: barEndX,
-            y1: staffY,
-            x2: barEndX,
-            y2: staffY + STAFF_HEIGHT,
-            stroke: '#000',
-            'stroke-width': 0.8
-        }));
 
-        // Bar number
-        if(staffIndex === 0) {
-            svg.appendChild(svgText((b+1).toString(), {
-                x: barX + 4,
-                y: staffY - 4,
-                'font-size': 9,
-                fill: '#888',
-                'font-family': 'sans-serif'
+        // Bar number above top staff
+        if(si === 0) {
+            svg.appendChild(svgText(String(b+1), {
+                x:barX+4, y:staffY-6,
+                'font-size':9, fill:'#888',
+                'font-family':'sans-serif'
             }));
         }
 
-        // Draw notes in this bar
-        drawBarNotes(svg, staff, b, barX, staffY);
+        // Bar line
+        svg.appendChild(svgEl('line', {
+            x1:barEndX, y1:staffY,
+            x2:barEndX, y2:staffY+STAFF_HEIGHT,
+            stroke:'#000', 'stroke-width':0.9
+        }));
+
+        // Notes
+        const notes = (scoreData[staff.id]||[])
+            .filter(n => n.bar === b);
+        notes.forEach(note => {
+            drawNoteEl(svg, note, staff, barX, staffY);
+        });
 
         barX += BAR_WIDTH;
     }
 
-    // Final double bar line at very end
+    // Final double bar
     if(endBar === totalBars) {
         svg.appendChild(svgEl('line', {
-            x1: barX,
-            y1: staffY,
-            x2: barX,
-            y2: staffY + STAFF_HEIGHT,
-            stroke: '#000',
-            'stroke-width': 3
+            x1:barX, y1:staffY,
+            x2:barX, y2:staffY+STAFF_HEIGHT,
+            stroke:'#000', 'stroke-width':3
         }));
         svg.appendChild(svgEl('line', {
-            x1: barX - 4,
-            y1: staffY,
-            x2: barX - 4,
-            y2: staffY + STAFF_HEIGHT,
-            stroke: '#000',
-            'stroke-width': 1
+            x1:barX-5, y1:staffY,
+            x2:barX-5, y2:staffY+STAFF_HEIGHT,
+            stroke:'#000', 'stroke-width':1
         }));
     }
 }
 
-function getHeaderWidth(isFirst) {
-    let w = CLEF_WIDTH + 4 + getKeyWidth();
-    if(isFirst) w += TIMESIG_WIDTH + 8;
-    return w;
-}
+function drawNoteEl(svg, note, staff, barX, staffY) {
+    const nx = barX + note.beatX;
+    const ny = staffY + STAFF_HEIGHT -
+        (note.pitchIndex * STAFF_LINE_SPACING / 2);
 
-function getKeyWidth() {
-    const sharps = KEY_SHARPS[((keyIndex % 12) + 12) % 12];
-    const flats = KEY_FLATS[((keyIndex % 12) + 12) % 12];
-    const count = sharps + flats;
-    return count > 0 ? count * 8 + 4 : 4;
-}
-
-function drawClef(svg, clef, x, staffY) {
-    if(clef === 'treble') {
-        const el = svgText('𝄞', {
-            x: x,
-            y: staffY + STAFF_HEIGHT - 2,
-            'font-size': 42,
-            'font-family': 'serif',
-            fill: '#000'
-        });
-        svg.appendChild(el);
-    } else if(clef === 'bass') {
-        const el = svgText('𝄢', {
-            x: x,
-            y: staffY + STAFF_HEIGHT - 8,
-            'font-size': 28,
-            'font-family': 'serif',
-            fill: '#000'
-        });
-        svg.appendChild(el);
-    } else if(clef === 'perc') {
-        svg.appendChild(svgEl('rect', {
-            x: x + 2,
-            y: staffY + 4,
-            width: 4,
-            height: STAFF_HEIGHT - 8,
-            fill: '#000'
-        }));
-        svg.appendChild(svgEl('rect', {
-            x: x + 10,
-            y: staffY + 4,
-            width: 4,
-            height: STAFF_HEIGHT - 8,
-            fill: '#000'
-        }));
-    }
-}
-
-function drawKeySignature(svg, clef, x, staffY) {
-    const idx = ((keyIndex % 12) + 12) % 12;
-    const sharps = KEY_SHARPS[idx];
-    const flats = KEY_FLATS[idx];
-
-    const sharpPositions = clef === 'treble' ?
-        [0,3,−1,2,5,1,4] : [2,5,1,4,7,3,6];
-    const flatPositions = clef === 'treble' ?
-        [4,1,5,2,6,3,7] : [6,3,7,4,8,5,9];
-
-    for(let i = 0; i < sharps; i++) {
-        const pos = sharpPositions[i];
-        const y = staffY + STAFF_HEIGHT -
-            (pos * STAFF_LINE_SPACING / 2) - 6;
-        svg.appendChild(svgText('♯', {
-            x: x + i * 8,
-            y: y,
-            'font-size': 12,
-            fill: '#000',
-            'font-family': 'serif'
-        }));
-    }
-
-    for(let i = 0; i < flats; i++) {
-        const pos = flatPositions[i];
-        const y = staffY + STAFF_HEIGHT -
-            (pos * STAFF_LINE_SPACING / 2) - 2;
-        svg.appendChild(svgText('♭', {
-            x: x + i * 8,
-            y: y,
-            'font-size': 12,
-            fill: '#000',
-            'font-family': 'serif'
-        }));
-    }
-}
-
-function drawTimeSig(svg, x, staffY) {
-    const parts = timeSig.split('/');
-    svg.appendChild(svgText(parts[0], {
-        x: x + 4,
-        y: staffY + STAFF_LINE_SPACING * 2 - 1,
-        'font-size': 16,
-        'font-weight': 'bold',
-        'font-family': 'serif',
-        fill: '#000'
-    }));
-    svg.appendChild(svgText(parts[1], {
-        x: x + 4,
-        y: staffY + STAFF_HEIGHT - 1,
-        'font-size': 16,
-        'font-weight': 'bold',
-        'font-family': 'serif',
-        fill: '#000'
-    }));
-}
-
-function drawBrace(svg, systemY) {
-    const trebleY = getStaffY(1, systemY);
-    const bassY = getStaffY(2, systemY);
-    const topY = trebleY;
-    const bottomY = bassY + STAFF_HEIGHT;
-    const x = STAFF_MARGIN_LEFT - 12;
-
-    svg.appendChild(svgText('{', {
-        x: x - 8,
-        y: topY + (bottomY - topY) / 2 + 10,
-        'font-size': (bottomY - topY) * 1.2,
-        'font-family': 'serif',
-        fill: '#000'
-    }));
-}
-
-function drawBarNotes(svg, staff, barIndex, barX, staffY) {
-    const notes = (scoreData[staff.id] || [])
-        .filter(n => n.bar === barIndex);
-
-    notes.forEach(note => {
-        drawNote(svg, note, staff, barX, staffY);
-    });
-}
-
-function drawNote(svg, note, staff, barX, staffY) {
-    const noteX = barX + note.beatX;
-    const pitchIndex = note.pitchIndex;
-    const noteY = staffY + STAFF_HEIGHT -
-        (pitchIndex * STAFF_LINE_SPACING / 2);
-
-    const g = svgEl('g', {
-        'data-noteid': note.id,
-        'data-staffid': staff.id,
-        cursor: staff.editable ? 'pointer' : 'default'
-    });
+    const g = svgEl('g', {'data-id':note.id, 'data-staff':staff.id});
 
     if(note.isRest) {
         g.appendChild(svgText('𝄽', {
-            x: noteX,
-            y: noteY,
-            'font-size': 16,
-            fill: '#000',
-            'font-family': 'serif'
+            x:nx, y:ny, 'font-size':18,
+            fill:'#000', 'font-family':'serif'
         }));
     } else {
         const filled = note.duration !== 'whole' &&
             note.duration !== 'half';
-
         g.appendChild(svgEl('ellipse', {
-            cx: noteX,
-            cy: noteY,
-            rx: NOTE_HEAD_RADIUS,
-            ry: NOTE_HEAD_RADIUS * 0.75,
+            cx:nx, cy:ny,
+            rx:NOTE_HEAD_RADIUS, ry:NOTE_HEAD_RADIUS*0.75,
             fill: filled ? '#000' : 'none',
-            stroke: '#000',
-            'stroke-width': 1.2,
-            transform: `rotate(-15,${noteX},${noteY})`
+            stroke:'#000', 'stroke-width':1.2,
+            transform:`rotate(-15,${nx},${ny})`
         }));
 
         if(note.duration !== 'whole') {
-            const stemUp = pitchIndex < 6;
-            const stemX = stemUp ?
-                noteX + NOTE_HEAD_RADIUS - 1 :
-                noteX - NOTE_HEAD_RADIUS + 1;
-            const stemY1 = noteY;
-            const stemY2 = stemUp ?
-                noteY - STEM_HEIGHT : noteY + STEM_HEIGHT;
+            const up = note.pitchIndex < 6;
+            const sx = up ? nx+NOTE_HEAD_RADIUS-1 :
+                nx-NOTE_HEAD_RADIUS+1;
+            const sy2 = up ? ny-STEM_HEIGHT : ny+STEM_HEIGHT;
             g.appendChild(svgEl('line', {
-                x1: stemX, y1: stemY1,
-                x2: stemX, y2: stemY2,
-                stroke: '#000',
-                'stroke-width': 1.2
+                x1:sx, y1:ny, x2:sx, y2:sy2,
+                stroke:'#000', 'stroke-width':1.2
             }));
-
-            if(note.duration === 'eighth') {
-                const flagX = stemX;
-                const flagY = stemY2;
-                const dir = stemUp ? 1 : -1;
+            if(note.duration === 'eighth' ||
+               note.duration === 'sixteenth') {
+                const d = up ? 1 : -1;
                 g.appendChild(svgEl('path', {
-                    d: `M${flagX},${flagY} C${flagX+12},${flagY+dir*8} ${flagX+10},${flagY+dir*20} ${flagX+2},${flagY+dir*25}`,
-                    fill: 'none',
-                    stroke: '#000',
-                    'stroke-width': 1.2
+                    d:`M${sx},${sy2} C${sx+12},${sy2+d*10} ${sx+8},${sy2+d*22} ${sx+2},${sy2+d*28}`,
+                    fill:'none', stroke:'#000', 'stroke-width':1.2
                 }));
             }
         }
 
-        if(note.accidental) {
-            g.appendChild(svgText(
-                note.accidental === 'sharp' ? '♯' : '♭', {
-                x: noteX - 10,
-                y: noteY + 4,
-                'font-size': 10,
-                fill: '#000',
-                'font-family': 'serif'
+        if(note.accidental === 'sharp') {
+            g.appendChild(svgText('♯', {
+                x:nx-12, y:ny+4,
+                'font-size':11, fill:'#000',
+                'font-family':'serif'
+            }));
+        } else if(note.accidental === 'flat') {
+            g.appendChild(svgText('♭', {
+                x:nx-12, y:ny+4,
+                'font-size':11, fill:'#000',
+                'font-family':'serif'
             }));
         }
 
         if(note.dotted) {
             g.appendChild(svgEl('circle', {
-                cx: noteX + NOTE_HEAD_RADIUS + 4,
-                cy: noteY - 2,
-                r: 2,
-                fill: '#000'
+                cx:nx+NOTE_HEAD_RADIUS+5, cy:ny-2,
+                r:2, fill:'#000'
             }));
         }
 
         // Ledger lines
-        drawLedgerLines(svg, noteX, noteY, staffY, pitchIndex);
+        if(ny < staffY) {
+            for(let ly=staffY-STAFF_LINE_SPACING;
+                ly>=ny-2; ly-=STAFF_LINE_SPACING) {
+                g.appendChild(svgEl('line', {
+                    x1:nx-9, y1:ly, x2:nx+9, y2:ly,
+                    stroke:'#000', 'stroke-width':0.9
+                }));
+            }
+        }
+        if(ny > staffY+STAFF_HEIGHT) {
+            for(let ly=staffY+STAFF_HEIGHT+STAFF_LINE_SPACING;
+                ly<=ny+2; ly+=STAFF_LINE_SPACING) {
+                g.appendChild(svgEl('line', {
+                    x1:nx-9, y1:ly, x2:nx+9, y2:ly,
+                    stroke:'#000', 'stroke-width':0.9
+                }));
+            }
+        }
     }
 
     if(staff.editable) {
-        g.addEventListener('click', (e) => {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', e => {
             e.stopPropagation();
-            if(document.getElementById('btnDelete').classList.contains('active')) {
+            if(isDeleteMode) {
                 deleteNote(staff.id, note.id);
             }
         });
@@ -495,169 +379,133 @@ function drawNote(svg, note, staff, barX, staffY) {
     svg.appendChild(g);
 }
 
-function drawLedgerLines(svg, noteX, noteY, staffY, pitchIndex) {
-    const topLine = staffY;
-    const bottomLine = staffY + STAFF_HEIGHT;
-
-    if(noteY < topLine) {
-        let ly = topLine - STAFF_LINE_SPACING;
-        while(ly >= noteY - 2) {
-            svg.appendChild(svgEl('line', {
-                x1: noteX - 8, y1: ly,
-                x2: noteX + 8, y2: ly,
-                stroke: '#000',
-                'stroke-width': 0.8
-            }));
-            ly -= STAFF_LINE_SPACING;
-        }
-    }
-
-    if(noteY > bottomLine) {
-        let ly = bottomLine + STAFF_LINE_SPACING;
-        while(ly <= noteY + 2) {
-            svg.appendChild(svgEl('line', {
-                x1: noteX - 8, y1: ly,
-                x2: noteX + 8, y2: ly,
-                stroke: '#000',
-                'stroke-width': 0.8
-            }));
-            ly += STAFF_LINE_SPACING;
-        }
-    }
+function attachClickListener(svg) {
+    svg.addEventListener('click', e => {
+        const wrapper = document.getElementById('scoreWrapper');
+        const rect = wrapper.getBoundingClientRect();
+        const svgX = e.clientX - rect.left + wrapper.scrollLeft;
+        const svgY = e.clientY - rect.top + wrapper.scrollTop;
+        handleScoreClick(svgX, svgY);
+    });
 }
 
-// --- Note Input ---
-function attachNoteInputListeners(svg) {
-    svg.addEventListener('click', onScoreClick);
-}
-
-function onScoreClick(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const scrollEl = document.getElementById('scoreWrapper');
-    const scrollX = scrollEl.scrollLeft;
-    const scrollY = scrollEl.scrollTop;
-    const svgX = x + scrollX;
-    const svgY = y + scrollY;
-    placeNoteAtPosition(svgX, svgY);
-}
-
-function placeNoteAtPosition(svgX, svgY) {
-    const lines = getLinesPerSystem();
+function handleScoreClick(svgX, svgY) {
+    const lines = getLinesCount();
     for(let line = 0; line < lines; line++) {
-        const systemY = 40 + line * (getSystemHeight() + 40);
+        const systemY = 40 + line * (getSystemHeight() + 60);
         const startBar = line * BARS_PER_LINE;
         const endBar = Math.min(startBar + BARS_PER_LINE, totalBars);
+        const isFirstLine = line === 0;
+        const headerW = getHeaderWidth(isFirstLine);
 
         STAVES.forEach((staff, si) => {
             if(!staff.editable) return;
             const staffY = getStaffY(si, systemY);
-            const staffBottom = staffY + STAFF_HEIGHT + 20;
-            const staffTop = staffY - 20;
+            if(svgY < staffY - 25 ||
+               svgY > staffY + STAFF_HEIGHT + 25) return;
 
-            if(svgY < staffTop || svgY > staffBottom) return;
-
-            const isFirst = line === 0;
-            const headerW = getHeaderWidth(isFirst);
-            const barAreaStart = STAFF_MARGIN_LEFT + headerW;
-
+            let barX = STAFF_MARGIN_LEFT + headerW;
             for(let b = startBar; b < endBar; b++) {
-                const barX = barAreaStart +
-                    (b - startBar) * BAR_WIDTH;
-                const barEndX = barX + BAR_WIDTH;
-
-                if(svgX >= barX && svgX < barEndX) {
-                    const pitchIndex = yToPitchIndex(svgY, staffY);
+                if(svgX >= barX && svgX < barX + BAR_WIDTH) {
+                    const pitchIndex = Math.round(
+                        (staffY + STAFF_HEIGHT - svgY) /
+                        (STAFF_LINE_SPACING / 2)
+                    );
                     const beatX = svgX - barX;
-                    addNote(staff.id, b, pitchIndex, beatX);
+                    addNote(staff.id, b,
+                        Math.max(0, Math.min(14, pitchIndex)),
+                        beatX);
                     return;
                 }
+                barX += BAR_WIDTH;
             }
         });
     }
-}
-
-function yToPitchIndex(y, staffY) {
-    const relY = staffY + STAFF_HEIGHT - y;
-    return Math.round(relY / (STAFF_LINE_SPACING / 2));
 }
 
 function addNote(staffId, bar, pitchIndex, beatX) {
     if(!scoreData[staffId]) scoreData[staffId] = [];
     const note = {
         id: Date.now() + Math.random(),
-        bar: bar,
-        pitchIndex: pitchIndex,
-        beatX: beatX,
+        bar, pitchIndex, beatX,
         duration: selectedDur,
         dotted: isDotted,
-        accidental: isSharp ? 'sharp' : isFlat ? 'flat' : null,
-        isRest: isRest
+        accidental: isSharp?'sharp':isFlat?'flat':null,
+        isRest
     };
     scoreData[staffId].push(note);
     saveScore();
     drawScore();
-    setStatus(`Added ${selectedDur} note to ${staffId} bar ${bar+1}`);
+    const staff = STAVES.find(s=>s.id===staffId);
+    const pitch = staff ?
+        staff.pitches[pitchIndex] || '?' : '?';
+    setStatus(`Added ${selectedDur} — ${pitch} — bar ${bar+1}`);
 }
 
 function deleteNote(staffId, noteId) {
-    scoreData[staffId] = scoreData[staffId]
+    scoreData[staffId] = (scoreData[staffId]||[])
         .filter(n => n.id !== noteId);
     saveScore();
     drawScore();
     setStatus('Note deleted');
 }
 
-// --- Persistence ---
 function saveScore() {
-    localStorage.setItem('polyvox_score',
-        JSON.stringify(scoreData));
+    try {
+        localStorage.setItem('polyvox_score',
+            JSON.stringify(scoreData));
+    } catch(e) {}
 }
 
 function loadScore() {
-    const saved = localStorage.getItem('polyvox_score');
-    if(saved) {
-        try {
-            scoreData = JSON.parse(saved);
-        } catch(e) {}
-    }
+    try {
+        const s = localStorage.getItem('polyvox_score');
+        if(s) scoreData = JSON.parse(s);
+    } catch(e) {}
 }
 
 // --- Recording ---
-document.getElementById('btnRecord').addEventListener('click', startRecording);
-document.getElementById('btnStop').addEventListener('click', stopRecording);
+document.getElementById('btnRecord')
+    .addEventListener('click', startRecording);
+document.getElementById('btnStop')
+    .addEventListener('click', stopRecording);
+document.getElementById('btnPlay')
+    .addEventListener('click', () => {
+        if(recordedUrl) new Audio(recordedUrl).play();
+    });
 
 async function startRecording() {
     try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio:{echoCancellation:true,noiseSuppression:true}
-        });
-        audioContext = new AudioContext({sampleRate:44100});
-        analyser = audioContext.createAnalyser();
+        mediaStream = await navigator.mediaDevices
+            .getUserMedia({audio:{
+                echoCancellation:true,
+                noiseSuppression:true
+            }});
+        audioCtx = new AudioContext({sampleRate:44100});
+        analyser = audioCtx.createAnalyser();
         analyser.fftSize = 8192;
-        audioContext.createMediaStreamSource(mediaStream)
+        audioCtx.createMediaStreamSource(mediaStream)
             .connect(analyser);
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(mediaStream);
         mediaRecorder.ondataavailable = e => {
-            if(e.data.size > 0) recordedChunks.push(e.data);
+            if(e.data.size>0) recordedChunks.push(e.data);
         };
         mediaRecorder.onstop = () => {
             const blob = new Blob(recordedChunks,
                 {type:'audio/webm'});
             recordedUrl = URL.createObjectURL(blob);
             document.getElementById('btnPlay').disabled = false;
+            placeVoiceNotes();
         };
         mediaRecorder.start();
         recordedNotes = [];
         lastNote = null;
         noteHoldCount = 0;
         isRecording = true;
-        recordingStartTime = performance.now();
         document.getElementById('btnRecord').disabled = true;
         document.getElementById('btnStop').disabled = false;
-        setStatus('🔴 Recording...');
+        setStatus('🔴 Recording... sing clearly!');
         detectPitchLoop();
     } catch(e) {
         setStatus('Mic error: ' + e.message);
@@ -669,23 +517,23 @@ function stopRecording() {
     if(mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
     }
-    if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
-    if(audioContext) audioContext.close();
+    if(mediaStream) mediaStream.getTracks()
+        .forEach(t=>t.stop());
+    if(audioCtx) audioCtx.close();
     document.getElementById('btnRecord').disabled = false;
     document.getElementById('btnStop').disabled = true;
-    setStatus('✅ Recorded ' + recordedNotes.length + ' notes — tap Generate');
-    placeVoiceNotes();
+    setStatus('✅ ' + recordedNotes.length + ' notes detected');
 }
 
 function detectPitchLoop() {
     if(!isRecording) return;
-    const buffer = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(buffer);
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
     let rms = 0;
-    for(let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
-    rms = Math.sqrt(rms/buffer.length);
+    for(let i=0;i<buf.length;i++) rms += buf[i]*buf[i];
+    rms = Math.sqrt(rms/buf.length);
     if(rms > 0.001) {
-        const pitch = autocorrelate(buffer, 44100);
+        const pitch = autocorrelate(buf, 44100);
         if(pitch > 80 && pitch < 1200) {
             const note = freqToNote(pitch);
             if(note === lastNote) {
@@ -693,6 +541,8 @@ function detectPitchLoop() {
             } else {
                 if(lastNote && noteHoldCount >= 3) {
                     recordedNotes.push(lastNote);
+                    setStatus('🔴 ' + recordedNotes.length
+                        + ' notes');
                 }
                 lastNote = note;
                 noteHoldCount = 1;
@@ -702,42 +552,31 @@ function detectPitchLoop() {
     requestAnimationFrame(detectPitchLoop);
 }
 
-function autocorrelate(buffer, sampleRate) {
+function autocorrelate(buffer, sr) {
     const SIZE = buffer.length;
-    const MAX_SAMPLES = Math.floor(SIZE/2);
-    let bestOffset = -1;
-    let bestCorrelation = 0;
-    let foundGoodCorrelation = false;
-    let correlations = new Array(MAX_SAMPLES);
+    const MAX = Math.floor(SIZE/2);
+    let best = -1, bestC = 0, found = false;
+    const corrs = new Array(MAX);
     let rms = 0;
     for(let i=0;i<SIZE;i++) rms += buffer[i]*buffer[i];
-    rms = Math.sqrt(rms/SIZE);
-    if(rms < 0.001) return -1;
-    let lastCorrelation = 1;
-    for(let offset=0;offset<MAX_SAMPLES;offset++) {
-        let correlation = 0;
-        for(let i=0;i<MAX_SAMPLES;i++) {
-            correlation += Math.abs(
-                (buffer[i])-(buffer[i+offset]));
+    if(Math.sqrt(rms/SIZE) < 0.001) return -1;
+    let last = 1, sum = 0;
+    for(let tau=0;tau<MAX;tau++) {
+        let s = 0;
+        for(let i=0;i<MAX;i++) {
+            s += Math.abs(buffer[i]-buffer[i+tau]);
         }
-        correlation = 1-(correlation/MAX_SAMPLES);
-        correlations[offset] = correlation;
-        if((correlation>0.9)&&(correlation>lastCorrelation)) {
-            foundGoodCorrelation = true;
-            if(correlation > bestCorrelation) {
-                bestCorrelation = correlation;
-                bestOffset = offset;
-            }
-        } else if(foundGoodCorrelation) {
-            let shift = (correlations[bestOffset+1] -
-                correlations[bestOffset-1]) /
-                correlations[bestOffset];
-            return sampleRate/(bestOffset+(8*shift));
+        sum += s;
+        corrs[tau] = sum>0 ? s*tau/sum : 0;
+        if(tau>0 && corrs[tau]<0.15 && corrs[tau]<last) {
+            found = true;
+            if(corrs[tau] > bestC) { bestC=corrs[tau]; best=tau; }
+        } else if(found) {
+            return sr/best;
         }
-        lastCorrelation = correlation;
+        last = corrs[tau];
     }
-    if(bestCorrelation > 0.01) return sampleRate/bestOffset;
-    return -1;
+    return best>0 ? sr/best : -1;
 }
 
 function freqToNote(freq) {
@@ -745,184 +584,167 @@ function freqToNote(freq) {
     const n=['C','C#','D','D#','E','F',
              'F#','G','G#','A','A#','B'];
     const midi = Math.round(12*Math.log2(freq/440)+69);
-    return n[midi%12] + (Math.floor(midi/12)-1);
+    return n[midi%12]+(Math.floor(midi/12)-1);
 }
 
 function placeVoiceNotes() {
     scoreData.voice = [];
+    scoreData.organTreble = [];
     const beatsPerBar = parseInt(timeSig.split('/')[0]);
-    const beatWidth = BAR_WIDTH / beatsPerBar;
-    let bar = 0;
-    let beat = 0;
+    const beatW = BAR_WIDTH / beatsPerBar;
+    let bar = 0, beat = 0;
 
     recordedNotes.forEach(noteName => {
-        const pitchIndex = noteToPitchIndex(
-            noteName, TREBLE_PITCHES);
-        scoreData.voice.push({
+        const pi = TREBLE_PITCHES.indexOf(noteName);
+        const pitchIndex = pi >= 0 ? pi : 4;
+        const beatX = getHeaderWidth(bar===0) +
+            beat * beatW + beatW/2;
+        const noteObj = {
             id: Date.now() + Math.random(),
-            bar: bar,
-            pitchIndex: pitchIndex,
-            beatX: getHeaderWidth(bar===0) +
-                beat * beatWidth + beatWidth/2,
-            duration: 'quarter',
-            dotted: false,
-            accidental: null,
-            isRest: false
+            bar, pitchIndex, beatX,
+            duration:'quarter',
+            dotted:false, accidental:null, isRest:false
+        };
+        scoreData.voice.push(noteObj);
+        scoreData.organTreble.push({
+            ...noteObj, id:Date.now()+Math.random()
         });
         beat++;
         if(beat >= beatsPerBar) {
-            beat = 0;
-            bar++;
-            if(bar >= totalBars) {
-                totalBars++;
-            }
+            beat = 0; bar++;
+            if(bar >= totalBars) totalBars++;
         }
     });
-
-    scoreData.organTreble = scoreData.voice.map(n => ({...n,
-        id: Date.now() + Math.random()}));
 
     saveScore();
     drawScore();
     setStatus('Score generated! Edit organ notes as needed.');
 }
 
-function noteToPitchIndex(noteName, pitches) {
-    const idx = pitches.indexOf(noteName);
-    if(idx >= 0) return idx;
-    return 4;
-}
+// --- Toolbar ---
+document.getElementById('btnKeyUp')
+    .addEventListener('click', () => {
+        keyIndex = (keyIndex+1)%12;
+        document.getElementById('keyDisplay').textContent =
+            KEY_NAMES[keyIndex];
+        drawScore();
+    });
 
-// --- Toolbar Controls ---
-document.getElementById('btnKeyUp').addEventListener('click', () => {
-    keyIndex = (keyIndex + 1) % 12;
-    updateKeyDisplay();
-    drawScore();
-});
+document.getElementById('btnKeyDown')
+    .addEventListener('click', () => {
+        keyIndex = ((keyIndex-1)+12)%12;
+        document.getElementById('keyDisplay').textContent =
+            KEY_NAMES[keyIndex];
+        drawScore();
+    });
 
-document.getElementById('btnKeyDown').addEventListener('click', () => {
-    keyIndex = ((keyIndex - 1) + 12) % 12;
-    updateKeyDisplay();
-    drawScore();
-});
+document.getElementById('timeSig')
+    .addEventListener('change', e => {
+        timeSig = e.target.value;
+        drawScore();
+    });
 
-function updateKeyDisplay() {
-    document.getElementById('keyDisplay').textContent =
-        KEY_NAMES[((keyIndex%12)+12)%12];
-}
+document.getElementById('btnAddBar')
+    .addEventListener('click', () => {
+        totalBars += 4;
+        drawScore();
+        setStatus('Added 4 bars');
+    });
 
-document.getElementById('timeSig').addEventListener('change', (e) => {
-    timeSig = e.target.value;
-    drawScore();
-});
-
-document.getElementById('btnAddBar').addEventListener('click', () => {
-    totalBars += 4;
-    drawScore();
-    setStatus('Added 4 bars');
-});
-
-document.getElementById('btnPrint').addEventListener('click', () => {
-    window.print();
-});
+document.getElementById('btnPrint')
+    .addEventListener('click', () => window.print());
 
 // Tap tempo
 let tapTimes = [];
-document.getElementById('btnTapTempo').addEventListener('click', () => {
-    const now = Date.now();
-    tapTimes.push(now);
-    if(tapTimes.length > 8) tapTimes.shift();
-    if(tapTimes.length > 1) {
-        const intervals = [];
-        for(let i=1;i<tapTimes.length;i++) {
-            intervals.push(tapTimes[i]-tapTimes[i-1]);
+document.getElementById('btnTapTempo')
+    .addEventListener('click', () => {
+        const now = Date.now();
+        tapTimes.push(now);
+        if(tapTimes.length > 8) tapTimes.shift();
+        if(tapTimes.length > 1) {
+            const avg = tapTimes.slice(1).reduce((s,t,i) =>
+                s + (t - tapTimes[i]), 0) / (tapTimes.length-1);
+            bpm = Math.round(60000/avg);
+            document.getElementById('bpmDisplay')
+                .textContent = bpm;
         }
-        const avg = intervals.reduce((a,b)=>a+b,0)/intervals.length;
-        bpm = Math.round(60000/avg);
-        document.getElementById('bpmDisplay').textContent = bpm;
-    }
-});
+    });
 
 // Note palette
 document.querySelectorAll('[data-dur]').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('[data-dur]').forEach(b =>
-            b.classList.remove('active'));
+        document.querySelectorAll('[data-dur]')
+            .forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selectedDur = btn.dataset.dur;
         isRest = false;
         document.getElementById('btnRest')
             .classList.remove('active');
+        setStatus('Selected: ' + selectedDur + ' note');
     });
 });
 
-document.getElementById('btnDot').addEventListener('click', () => {
-    isDotted = !isDotted;
-    document.getElementById('btnDot')
-        .classList.toggle('active', isDotted);
-});
+document.getElementById('btnDot')
+    .addEventListener('click', () => {
+        isDotted = !isDotted;
+        document.getElementById('btnDot')
+            .classList.toggle('active', isDotted);
+    });
 
-document.getElementById('btnSharp').addEventListener('click', () => {
-    isSharp = !isSharp;
-    isFlat = false;
-    document.getElementById('btnSharp')
-        .classList.toggle('active', isSharp);
-    document.getElementById('btnFlat')
-        .classList.remove('active');
-});
+document.getElementById('btnSharp')
+    .addEventListener('click', () => {
+        isSharp = !isSharp; isFlat = false;
+        document.getElementById('btnSharp')
+            .classList.toggle('active', isSharp);
+        document.getElementById('btnFlat')
+            .classList.remove('active');
+    });
 
-document.getElementById('btnFlat').addEventListener('click', () => {
-    isFlat = !isFlat;
-    isSharp = false;
-    document.getElementById('btnFlat')
-        .classList.toggle('active', isFlat);
-    document.getElementById('btnSharp')
-        .classList.remove('active');
-});
+document.getElementById('btnFlat')
+    .addEventListener('click', () => {
+        isFlat = !isFlat; isSharp = false;
+        document.getElementById('btnFlat')
+            .classList.toggle('active', isFlat);
+        document.getElementById('btnSharp')
+            .classList.remove('active');
+    });
 
-document.getElementById('btnRest').addEventListener('click', () => {
-    isRest = !isRest;
-    document.getElementById('btnRest')
-        .classList.toggle('active', isRest);
-});
+document.getElementById('btnRest')
+    .addEventListener('click', () => {
+        isRest = !isRest;
+        document.getElementById('btnRest')
+            .classList.toggle('active', isRest);
+    });
 
-document.getElementById('btnDelete').addEventListener('click', () => {
-    const btn = document.getElementById('btnDelete');
-    btn.classList.toggle('active');
-    setStatus(btn.classList.contains('active') ?
-        '🗑 Delete mode — tap a note to delete' :
-        'Delete mode off');
-});
+document.getElementById('btnDelete')
+    .addEventListener('click', () => {
+        isDeleteMode = !isDeleteMode;
+        document.getElementById('btnDelete')
+            .classList.toggle('active', isDeleteMode);
+        setStatus(isDeleteMode ?
+            '🗑 Tap a note to delete it' :
+            'Delete mode off');
+    });
 
-document.getElementById('btnPlay').addEventListener('click', () => {
-    if(recordedUrl) {
-        const audio = new Audio(recordedUrl);
-        audio.play();
-    }
-});
-
-// --- Print Styles ---
-const printStyle = document.createElement('style');
-printStyle.textContent = `
+// Print styles
+const ps = document.createElement('style');
+ps.textContent = `
 @media print {
-    #header, #toolbar, #notePanel, #status { display: none !important; }
-    #scoreWrapper {
-        overflow: visible !important;
-        background: white !important;
-        padding: 0 !important;
-    }
-    body { background: white !important; }
+    #header,#toolbar,#notePanel,#status {display:none!important;}
+    #scoreWrapper {overflow:visible!important;padding:0!important;}
+    body {background:white!important;}
 }`;
-document.head.appendChild(printStyle);
+document.head.appendChild(ps);
 
-// --- Init ---
 function setStatus(msg) {
-    document.getElementById('status').textContent = msg;
+    const el = document.getElementById('status');
+    if(el) el.textContent = msg;
 }
 
+// --- Init ---
 loadScore();
 drawScore();
-setStatus('Ready — record your voice or tap staff to add notes');
+setStatus('Ready — record voice or tap staff to add notes');
 
 if('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
