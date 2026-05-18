@@ -9,98 +9,141 @@
     <script src="https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js"></script>
     <script src="https://surikov.github.io/webaudiofontdata/sound/0190_Chaos_sf2_file.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #121212; color: #fff; font-family: sans-serif; }
-        #header {
-            background: #1B5E20;
-            padding: 10px 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{background:#121212;color:#fff;
+            font-family:sans-serif;
+            -webkit-tap-highlight-color:transparent;}
+
+        #header{
+            background:#1B5E20;
+            padding:8px 10px;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
         }
-        #header h1 { color: #F9A825; font-size: 20px; }
-        #toolbar {
-            background: #1E1E1E;
-            padding: 6px 8px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            border-bottom: 1px solid #333;
+        #header h1{color:#F9A825;font-size:20px;}
+
+        #recBar{
+            background:#222;
+            padding:6px 8px;
+            display:flex;
+            gap:5px;
+            flex-wrap:wrap;
+            border-bottom:1px solid #333;
         }
-        #notePanel {
-            background: #1E1E1E;
-            padding: 6px 8px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            border-top: 1px solid #333;
+
+        #playBar{
+            background:#1A2A1A;
+            padding:6px 8px;
+            display:flex;
+            gap:5px;
+            flex-wrap:wrap;
+            border-bottom:1px solid #333;
         }
-        .tool-label {
-            color: #888;
-            font-size: 10px;
-            align-self: center;
-            margin-right: 2px;
+
+        #settingsBar{
+            background:#1E1E1E;
+            padding:5px 8px;
+            display:flex;
+            gap:4px;
+            flex-wrap:wrap;
+            border-bottom:1px solid #333;
+            align-items:center;
         }
-        .tbtn {
-            background: #2A2A2A;
-            color: white;
-            border: 1px solid #444;
-            border-radius: 4px;
-            padding: 6px 10px;
-            font-size: 13px;
-            cursor: pointer;
-            touch-action: manipulation;
-            -webkit-tap-highlight-color: transparent;
+
+        #status{
+            text-align:center;
+            color:#F9A825;
+            padding:4px 8px;
+            font-size:12px;
+            background:#1A1A1A;
+            min-height:22px;
         }
-        .tbtn.active { background: #F9A825; color: black; }
-        .tbtn.rec { background: #1B5E20; }
-        .tbtn.stp { background: #B71C1C; }
-        .tbtn.ply { background: #1565C0; }
-        .tbtn:disabled { opacity: 0.4; }
-        #status {
-            text-align: center;
-            color: #F9A825;
-            padding: 5px;
-            font-size: 12px;
-            background: #1A1A1A;
-            min-height: 24px;
+
+        #scoreWrapper{
+            overflow:auto;
+            background:#f5f0e8;
+            height:calc(100vh - 280px);
         }
-        #scoreWrapper {
-            overflow: auto;
-            background: #f5f0e8;
-            height: calc(100vh - 220px);
+
+        #noteBar{
+            background:#111;
+            padding:5px 6px;
+            display:flex;
+            gap:3px;
+            flex-wrap:wrap;
+            border-top:1px solid #333;
+            position:fixed;
+            bottom:0;left:0;right:0;
+            z-index:100;
         }
-        select.tbtn { padding: 5px 6px; }
+
+        .btn{
+            border:1px solid #444;
+            border-radius:4px;
+            padding:6px 9px;
+            font-size:13px;
+            cursor:pointer;
+            touch-action:manipulation;
+            background:#2A2A2A;
+            color:white;
+        }
+        .btn.active{background:#F9A825;color:#000;
+            border-color:#F9A825;}
+        .btn.green{background:#1B5E20;}
+        .btn.red{background:#B71C1C;}
+        .btn.blue{background:#1565C0;}
+        .btn.purple{background:#4A148C;}
+        .btn.orange{background:#E65100;}
+        .btn:disabled{opacity:0.35;}
+
+        .lbl{color:#888;font-size:10px;
+            align-self:center;margin-right:1px;}
+
+        select.btn{padding:5px 4px;}
+
+        #scoreWrapper::-webkit-scrollbar{height:6px;width:6px;}
+        #scoreWrapper::-webkit-scrollbar-thumb{
+            background:#888;border-radius:3px;}
     </style>
 </head>
 <body>
+
 <div id="header">
     <h1>🎵 PolyVox</h1>
-    <div style="display:flex;gap:5px">
-        <button class="tbtn rec" id="btnRecord">🎤 Rec</button>
-        <button class="tbtn stp" id="btnStop" disabled>⏹</button>
-        <button class="tbtn ply" id="btnPlay" disabled>▶ Voice</button>
-        <button class="tbtn" id="btnPlayOrgan" disabled style="background:#2E7D32">▶ Organ</button>
+    <div style="display:flex;gap:4px;align-items:center">
+        <span id="bpmDisplay" class="btn" style="min-width:44px;font-size:12px">120 BPM</span>
+        <button class="btn" id="btnTapTempo">TAP</button>
+        <button class="btn" id="btnPrint">🖨️</button>
     </div>
 </div>
 
-<div id="toolbar">
-    <span class="tool-label">KEY</span>
-    <button class="tbtn" id="btnKeyDown">♭</button>
-    <button class="tbtn" id="keyDisplay" style="min-width:36px">C</button>
-    <button class="tbtn" id="btnKeyUp">♯</button>
-    <span class="tool-label" style="margin-left:6px">TIME</span>
-    <select class="tbtn" id="timeSig">
+<!-- Recording controls -->
+<div id="recBar">
+    <span class="lbl">RECORD</span>
+    <button class="btn green" id="btnRecord">🎤 Record</button>
+    <button class="btn red" id="btnStop" disabled>⏹ Stop</button>
+    <span class="lbl" style="margin-left:6px">KEY</span>
+    <button class="btn" id="btnKeyDown">♭</button>
+    <button class="btn" id="keyDisplay" style="min-width:40px">C maj</button>
+    <button class="btn" id="btnKeyUp">♯</button>
+    <span class="lbl" style="margin-left:6px">TIME</span>
+    <select class="btn" id="timeSig">
         <option>4/4</option>
         <option>3/4</option>
         <option>2/4</option>
         <option>6/8</option>
     </select>
-    <span class="tool-label" style="margin-left:6px">BPM</span>
-    <button class="tbtn" id="btnTapTempo">TAP</button>
-    <span class="tbtn" id="bpmDisplay">120</span>
-    <button class="tbtn" id="btnAddBar">+4 Bars</button>
-    <button class="tbtn" id="btnPrint">🖨️</button>
+    <button class="btn" id="btnAddBar">+Bar</button>
+</div>
+
+<!-- Playback controls -->
+<div id="playBar">
+    <span class="lbl">PLAY</span>
+    <button class="btn blue" id="btnPlayVoice" disabled>🎤 Voice</button>
+    <button class="btn purple" id="btnPlayOrgan" disabled>🎹 Organ</button>
+    <button class="btn orange" id="btnPlayBoth" disabled>▶ Both</button>
+    <button class="btn red" id="btnStopPlay" disabled>⏹ Stop</button>
 </div>
 
 <div id="status">Loading organ sounds...</div>
@@ -109,19 +152,25 @@
     <svg id="scoreSvg"></svg>
 </div>
 
-<div id="notePanel">
-    <span class="tool-label">DUR</span>
-    <button class="tbtn active" data-dur="whole">𝅝</button>
-    <button class="tbtn" data-dur="half">𝅗𝅥</button>
-    <button class="tbtn" data-dur="quarter">♩</button>
-    <button class="tbtn" data-dur="eighth">♪</button>
-    <button class="tbtn" data-dur="sixteenth">𝅘𝅥𝅯</button>
-    <span class="tool-label" style="margin-left:4px">MOD</span>
-    <button class="tbtn" id="btnDot">•</button>
-    <button class="tbtn" id="btnSharp">♯</button>
-    <button class="tbtn" id="btnFlat">♭</button>
-    <button class="tbtn" id="btnRest">𝄽</button>
-    <button class="tbtn" id="btnDelete" style="background:#5A1A1A">🗑</button>
+<!-- Note input palette -->
+<div id="noteBar">
+    <span class="lbl">DUR</span>
+    <button class="btn" data-dur="whole" title="Whole">𝅝</button>
+    <button class="btn" data-dur="half" title="Half">𝅗𝅥</button>
+    <button class="btn active" data-dur="quarter" title="Quarter">♩</button>
+    <button class="btn" data-dur="eighth" title="Eighth">♪</button>
+    <button class="btn" data-dur="sixteenth" title="16th">𝅘𝅥𝅯</button>
+    <span class="lbl">REST</span>
+    <button class="btn" data-rest="whole" title="Whole rest">𝄻</button>
+    <button class="btn" data-rest="half" title="Half rest">𝄼</button>
+    <button class="btn" data-rest="quarter" title="Quarter rest">𝄽</button>
+    <button class="btn" data-rest="eighth" title="Eighth rest">𝄾</button>
+    <span class="lbl">ACC</span>
+    <button class="btn" id="btnSharp">♯</button>
+    <button class="btn" id="btnFlat">♭</button>
+    <button class="btn" id="btnNatural">♮</button>
+    <button class="btn" id="btnDot">•</button>
+    <button class="btn red" id="btnErase">🗑</button>
 </div>
 
 <script src="app.js"></script>
